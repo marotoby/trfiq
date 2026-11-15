@@ -35,6 +35,8 @@ responsive even on 100 GB files.
   instantly, with no refetch. Pan and zoom run at display rate.
 - **Safe by design.** T-RF/IQ never writes to your buckets; it only needs list and get permissions.
 
+📖 **[Wiki](docs/wiki/Home.md)**: getting started, configuration, deployment, viewer guide, formats, API and troubleshooting.
+
 ## Contents
 
 - [Features](#features)
