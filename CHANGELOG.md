@@ -1,4 +1,4 @@
-## Unreleased
+## v0.2.0-beta.0 (2026-11-15)
 
 ### Feat
 
