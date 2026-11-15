@@ -504,9 +504,18 @@ mod tests {
         let key = Some("x.sigmf-data");
         assert_eq!(ok(Status::Ok, None, key, Some("ci16_le"), Some(10)), Ok(()));
         // Raw files with a guessed datatype are viewable too.
-        assert_eq!(ok(Status::NeedsMeta, None, key, Some("cu8"), Some(10)), Ok(()));
         assert_eq!(
-            ok(Status::Broken, Some("no .sigmf-meta"), key, Some("cu8"), Some(10)),
+            ok(Status::NeedsMeta, None, key, Some("cu8"), Some(10)),
+            Ok(())
+        );
+        assert_eq!(
+            ok(
+                Status::Broken,
+                Some("no .sigmf-meta"),
+                key,
+                Some("cu8"),
+                Some(10)
+            ),
             Err("no .sigmf-meta".into())
         );
         assert!(ok(Status::Ok, None, None, Some("cu8"), Some(10)).is_err());
