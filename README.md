@@ -55,6 +55,7 @@ responsive even on 100 GB files.
 | **Formats** | SigMF pairs in every datatype (`cf64 cf32 ci32 ci16 ci8 cu32 cu16 cu8`, real variants, LE/BE); raw `.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` with the datatype guessed from the extension |
 | **Index & search** | Full-text search over names, descriptions, hardware and annotation labels; filter by status, datatype, frequency band and capture date |
 | **Spectrogram** | FFT 256 to 16384, Hann / Blackman-Harris / rectangular windows, turbo / viridis / gray colormaps, max-hold downsampling so short bursts never vanish when zoomed out |
+| **Spectrum & time plots** | For whatever time range is on screen: power spectrum (mean + max hold) and I/Q over time. Raw samples when zoomed in, a min/max envelope when zoomed out, so peaks never disappear |
 | **Navigation** | Box zoom with live Δf/Δt, wheel zoom per axis, drag to pan, zoom history, keyboard control |
 | **Annotations** | SigMF annotations drawn as labelled boxes; a side panel to filter by label and click to zoom |
 | **Shareable** | Every view (file, FFT, colormap, levels, zoom) lives in the URL, so a link reproduces it exactly |
@@ -144,9 +145,15 @@ sources:
 | Show everything | Double-click, or the fit button | `0` |
 | Zoom / pan mode | Toolbar toggle | `Z` / `H` |
 | Annotations | Click a box, or an item in the side panel to zoom to it | `A` toggles the overlay |
+| Spectrum / time plots | Toolbar toggles; drag inside a plot to zoom it, double-click to reset | `S` / `T` |
 | Levels | Drag the two handles on the colorbar; **Auto** resets | |
 
 Hovering shows frequency, time, power and the annotation under the cursor.
+
+The **Spectrum** and **Time** panels under the spectrogram always cover the time range that's
+visible, so zoom into a burst and they show just that burst. The spectrum also follows the
+frequency zoom. Each request reads at most ~2M samples. Over that, the panel shows a `sampled`
+badge: FFT segments, or slices of the envelope, are spread evenly across the window.
 
 ## How it works
 
@@ -199,6 +206,8 @@ The 100 GB load test is on the roadmap.
 | `GET /api/recordings?q=&source=&status=&datatype=&fmin=&fmax=&from=&to=&limit=` | Search the index (`q`: prefix full-text; `fmin`/`fmax`: band overlap in Hz) |
 | `GET /api/recordings/{id}` | One recording plus its full SigMF metadata |
 | `GET /api/recordings/{id}/overview?fft=&rows=&window=` | `rows × fft` little-endian `u16` (fftshifted); headers carry the layout and a `Server-Timing` breakdown |
+| `GET /api/recordings/{id}/psd?start=&count=&fft=&window=` | Power spectrum of a sample window: `fft` mean dBFS then `fft` max-hold dBFS, little-endian `f32`, fftshifted |
+| `GET /api/recordings/{id}/time?start=&count=&points=` | I/Q of a sample window: raw `[i, q]` pairs up to 65,536 samples, otherwise `points × [iMin, iMax, qMin, qMax]` (`x-trfiq-mode`) |
 | `GET /healthz` · `GET /readyz` | Liveness; readiness (every source scanned at least once) |
 
 ## Development
@@ -247,10 +256,11 @@ uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/pack
 - [x] Server-side overview with cancellation; WebGL2 spectrogram with max-hold downsampling
 - [x] Box zoom, zoom history, keyboard navigation, deep links
 - [x] SigMF annotation overlay and panel
+- [x] Spectrum (mean + max hold) and time-domain I/Q of the visible window
 - [x] Distroless image, compose demo stack, numpy golden tests, Playwright e2e, CI
 - [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading
 - [ ] Background max-hold pyramid and an LRU disk tile cache
-- [ ] Detail plots for a selection: time-domain I/Q, PSD, constellation
+- [ ] Constellation plot; band-limit the time plot to the visible frequency range
 - [ ] Metadata entry for raw files (stored in the index), with JSON export/import
 - [ ] Frequency and date filters in the UI (the API already supports them)
 - [ ] Prometheus `/metrics`

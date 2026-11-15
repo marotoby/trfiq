@@ -16,6 +16,8 @@ const ICONS = {
   file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M8 15l2-3 2 4 2-5 2 4" /></>,
   eye: <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
   eyeOff: <><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2" /></>,
+  spectrum: <><path d="M3 20h18" /><path d="M3 17l3-1 2-8 2 8 2-3 2 2 2-11 2 12 2 1h2" /></>,
+  wave: <><path d="M2 12c1.7-5 3.3-5 5 0s3.3 5 5 0 3.3-5 5 0 3.3 5 5 0" /></>,
   keyboard: <><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></>,
 } satisfies Record<string, ReactNode>
 
@@ -72,12 +74,13 @@ export function IconButton(props: {
   disabled?: boolean
   active?: boolean
   spin?: boolean
+  className?: string
   children?: ReactNode
 }) {
   return (
     <button
       type="button"
-      className={`icon-btn${props.active ? ' active' : ''}${props.spin ? ' spin' : ''}`}
+      className={`icon-btn${props.active ? ' active' : ''}${props.spin ? ' spin' : ''}${props.className ? ` ${props.className}` : ''}`}
       title={props.label}
       aria-label={props.label}
       aria-pressed={props.active}

@@ -73,6 +73,35 @@ export interface Overview {
   timing: string
 }
 
+/** Time-domain I/Q (normalised to ±1) for a window of samples. */
+export interface TimeData {
+  /** raw: `count × [i, q]`. minmax / sampled: `points × [iMin, iMax, qMin, qMax]`. */
+  mode: 'raw' | 'minmax' | 'sampled'
+  start: number
+  count: number
+  points: number
+  data: Float32Array
+  timing: string
+}
+
+/** Power spectrum (dBFS, fftshifted) of a window: mean and max-hold over FFT segments. */
+export interface PsdData {
+  /** full: every segment in the window; strided: evenly spaced segments (window > 2M samples). */
+  mode: 'full' | 'strided'
+  fft: number
+  segments: number
+  start: number
+  count: number
+  mean: Float32Array
+  max: Float32Array
+  timing: string
+}
+
+export interface WindowParams {
+  start: number
+  count: number
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -135,6 +164,40 @@ export const api = {
       dbStep: Number(h('x-trfiq-db-step')),
       mode: h('x-trfiq-mode'),
       lastOffset: Number(h('x-trfiq-last-offset')),
+      timing: h('server-timing'),
+    }
+  },
+
+  time: async (id: number, p: WindowParams & { points: number }, signal?: AbortSignal): Promise<TimeData> => {
+    const r = await check(await fetch(`/api/recordings/${id}/time${qs({ ...p })}`, { signal }))
+    const h = (k: string) => r.headers.get(k) ?? ''
+    return {
+      mode: h('x-trfiq-mode') as TimeData['mode'],
+      start: Number(h('x-trfiq-start')),
+      count: Number(h('x-trfiq-count')),
+      points: Number(h('x-trfiq-points')),
+      data: new Float32Array(await r.arrayBuffer()),
+      timing: h('server-timing'),
+    }
+  },
+
+  psd: async (
+    id: number,
+    p: WindowParams & { fft: number; window: WindowFn },
+    signal?: AbortSignal,
+  ): Promise<PsdData> => {
+    const r = await check(await fetch(`/api/recordings/${id}/psd${qs({ ...p })}`, { signal }))
+    const h = (k: string) => r.headers.get(k) ?? ''
+    const fft = Number(h('x-trfiq-fft'))
+    const all = new Float32Array(await r.arrayBuffer())
+    return {
+      mode: h('x-trfiq-mode') as PsdData['mode'],
+      fft,
+      segments: Number(h('x-trfiq-segments')),
+      start: Number(h('x-trfiq-start')),
+      count: Number(h('x-trfiq-count')),
+      mean: all.subarray(0, fft),
+      max: all.subarray(fft, 2 * fft),
       timing: h('server-timing'),
     }
   },

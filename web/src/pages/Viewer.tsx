@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { WINDOWS, api, type Overview, type RecordingDetail } from '../api'
+import { WINDOWS, api, type Overview, type RecordingDetail, type WindowFn } from '../api'
 import { parseAnnotations, toPlot, type Annotation } from '../annotations'
 import * as fmt from '../format'
 import { COLORMAPS, colormapStops, type Colormap } from '../spectrogram/colormaps'
+import { SpectrumPlot, TimePlot, type DetailWindow } from '../plots/DetailPlots'
 import {
+  FULL_VIEW,
   SpectrogramView,
   autoDbRange,
   type CursorInfo,
@@ -18,11 +20,27 @@ import { Divider, Field, Icon, IconButton, Segmented } from '../ui'
 const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384]
 const ROWS = 1024
 const MODE_KEY = 'trfiq.mode'
+const PANELS_KEY = 'trfiq.panels'
+
+interface Panels {
+  spectrum: boolean
+  time: boolean
+}
 
 function parseView(v?: string): View | null {
   const p = v?.split(',').map(Number)
   if (!p || p.length !== 4 || p.some((n) => !Number.isFinite(n))) return null
   return { x0: p[0], x1: p[1], y0: p[2], y1: p[3] }
+}
+
+function loadPanels(): Panels {
+  try {
+    const p = JSON.parse(localStorage.getItem(PANELS_KEY) ?? 'null')
+    if (p && typeof p === 'object') return { spectrum: p.spectrum !== false, time: p.time !== false }
+  } catch {
+    /* unavailable or corrupt: defaults */
+  }
+  return { spectrum: true, time: true }
 }
 
 function loadMode(): Mode {
@@ -48,6 +66,17 @@ export function Viewer() {
   const [showAnn, setShowAnn] = useState(true)
   const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<number | null>(null)
+  const [panels, setPanels] = useState<Panels>(loadPanels)
+  const togglePanel = (k: keyof Panels) =>
+    setPanels((p) => {
+      const n = { ...p, [k]: !p[k] }
+      try {
+        localStorage.setItem(PANELS_KEY, JSON.stringify(n))
+      } catch {
+        /* private mode etc. */
+      }
+      return n
+    })
 
   const setMode = (m: Mode) => {
     setModeState(m)
@@ -175,9 +204,19 @@ export function Viewer() {
         >
           Auto
         </button>
+        <Divider />
+        <IconButton icon="spectrum" label="Spectrum of the visible time range (S)" className="toggle"
+          active={panels.spectrum} disabled={!viewable} onClick={() => togglePanel('spectrum')}>
+          Spectrum
+        </IconButton>
+        <IconButton icon="wave" label="I/Q over the visible time range (T)" className="toggle"
+          active={panels.time} disabled={!viewable} onClick={() => togglePanel('time')}>
+          Time
+        </IconButton>
       </div>
 
       <div className="workspace">
+        <div className="main-col">
         <section className="plot-card">
           {!viewable ? (
             <div className="empty-state">
@@ -206,6 +245,7 @@ export function Viewer() {
               initialView={parseView(search.v)}
               onMode={setMode}
               onToggleAnnotations={() => setShowAnn((s) => !s)}
+              onTogglePanel={togglePanel}
               onCanBack={setCanBack}
               onAnnotationClick={(aid) => selectAnnotation(annotations.find((a) => a.id === aid) ?? null, false)}
               onViewChange={(v) =>
@@ -218,6 +258,10 @@ export function Viewer() {
             />
           )}
         </section>
+        {viewable && (panels.spectrum || panels.time) && (
+          <DetailRow r={r} v={search.v} fft={fft} windowFn={windowFn} panels={panels} />
+        )}
+        </div>
 
         <aside className="side">
           <Details r={r} />
@@ -241,6 +285,35 @@ export function Viewer() {
         </aside>
       </div>
     </main>
+  )
+}
+
+// ---- detail plots for the visible window ---------------------------------------------------
+
+function DetailRow(p: { r: RecordingDetail; v?: string; fft: number; windowFn: WindowFn; panels: Panels }) {
+  const { r, v } = p
+  // Driven by the (debounced) view in the URL, so panning doesn't flood the server.
+  const win = useMemo<DetailWindow>(() => {
+    const view = parseView(v) ?? FULL_VIEW
+    const n = r.num_samples ?? 1
+    const sr = r.sample_rate ?? 1
+    const cf = r.center_freq ?? 0
+    const clamp = (x: number) => Math.min(1, Math.max(0, x))
+    const y0 = clamp(Math.min(view.y0, view.y1))
+    const y1 = clamp(Math.max(view.y0, view.y1))
+    const start = Math.min(Math.floor(y0 * n), n - 1)
+    return {
+      start,
+      count: Math.max(1, Math.min(n - start, Math.ceil((y1 - y0) * n))),
+      fLo: cf + (view.x0 - 0.5) * sr,
+      fHi: cf + (view.x1 - 0.5) * sr,
+    }
+  }, [v, r])
+  return (
+    <div className={`detail-row${p.panels.spectrum && p.panels.time ? ' two' : ''}`}>
+      {p.panels.spectrum && <SpectrumPlot r={r} win={win} fft={p.fft} window={p.windowFn} />}
+      {p.panels.time && <TimePlot r={r} win={win} />}
+    </div>
   )
 }
 
@@ -413,6 +486,7 @@ interface SpectrogramProps {
   initialView: View | null
   onMode: (m: Mode) => void
   onToggleAnnotations: () => void
+  onTogglePanel: (k: keyof Panels) => void
   onCanBack: (b: boolean) => void
   onAnnotationClick: (id: number | null) => void
   onViewChange: (v: View) => void
@@ -507,6 +581,8 @@ function Spectrogram(p: SpectrogramProps) {
             if (k === 'z') return p.onMode('zoom')
             if (k === 'h' || k === 'p') return p.onMode('pan')
             if (k === 'a') return p.onToggleAnnotations()
+            if (k === 's') return p.onTogglePanel('spectrum')
+            if (k === 't') return p.onTogglePanel('time')
           }
           if (viewRef.current?.handleKey(e.nativeEvent)) e.preventDefault()
         }}
@@ -537,6 +613,7 @@ function Spectrogram(p: SpectrogramProps) {
             'Double-click / 0: show everything · Backspace: previous view',
             'Arrows: pan · + −: zoom time · [ ]: zoom frequency',
             'Z / H: zoom / pan mode · A: toggle annotations',
+            'S / T: spectrum / time plots of the visible time range',
             'Click an annotation to select it',
           ].join('\n')}
         >

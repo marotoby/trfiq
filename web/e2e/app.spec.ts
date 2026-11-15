@@ -151,3 +151,34 @@ test('annotations are listed, filterable, and zoom the plot when clicked', async
   await expect(page.locator('.readout-ann')).toHaveText('LoRa')
   expect(errors).toEqual([])
 })
+
+test('spectrum and time plots follow the visible window', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?q=ism_433')
+  await page.locator('.tr').first().click()
+  await expect(page.locator('.statusbar')).toContainText('strided overview')
+
+  // Both panels are on by default and cover the whole recording.
+  const spectrum = page.getByTestId('spectrum-plot')
+  const time = page.getByTestId('time-plot')
+  await expect(spectrum).toContainText('× 1024 FFT')
+  await expect(time).toContainText('2,097,152 samples')
+  await expect(time).toContainText('envelope')
+  expect(await distinctColours(page, '[data-testid="spectrum-plot"] canvas')).toBeGreaterThan(3)
+
+  // Zooming to an annotation narrows the window: the time plot switches to raw samples.
+  const timeReq = page.waitForRequest((r) => r.url().includes('/time?') && !r.url().includes('start=0&'))
+  await page.locator('.ann-item', { hasText: 'LoRa' }).first().click()
+  await timeReq
+  await expect(time).not.toContainText('2,097,152 samples')
+  await expect(time).not.toContainText('envelope')
+
+  // T toggles the time panel (and the choice is remembered).
+  await page.locator('.spectrogram').focus()
+  await page.keyboard.press('t')
+  await expect(time).toHaveCount(0)
+  await page.reload()
+  await expect(spectrum).toBeVisible()
+  await expect(time).toHaveCount(0)
+  expect(errors).toEqual([])
+})
