@@ -1,30 +1,24 @@
-use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::json;
 use tower_http::compression::CompressionLayer;
 use tower_http::trace::TraceLayer;
-use trfiq_dsp::{Datatype, Spectrogram, Window, quant, strided_offsets, timeseries};
+use trfiq_dsp::{Datatype, Spectrogram, Window, quant, timeseries};
 use trfiq_index::{ListQuery, Recording, RecordingDetail, Status};
-use trfiq_storage::Source;
 
+use crate::samples::{Coverage, ReadPlan, SampleReader, SampleWindow};
 use crate::state::AppState;
 use crate::web;
 
 /// Upper bound on overview rows per request (rows × fft × 2 bytes must stay sane).
 const MAX_ROWS: usize = 4096;
 const MAX_CELLS: usize = 16 << 20;
-/// Most raw samples one detail request (time / PSD) reads; beyond it we sample evenly.
-const DETAIL_CAP: u64 = 2 << 20;
 /// Time windows up to this many samples are sent sample by sample.
 const RAW_MAX: u64 = 65536;
 
@@ -150,15 +144,8 @@ async fn detail(State(st): St, Path(id): Path<i64>) -> ApiResult<Json<RecordingD
     Ok(Json(get_recording(&st, id).await?))
 }
 
-/// What a sample-reading endpoint needs to know about a viewable recording.
-struct Data {
-    src: Arc<Source>,
-    key: String,
-    dt: Datatype,
-    num_samples: u64,
-}
-
-async fn open_data(st: &AppState, id: i64) -> ApiResult<Data> {
+/// The sample reader for a viewable recording, or why it can't be read.
+async fn open_reader(st: &AppState, id: i64) -> ApiResult<SampleReader> {
     let rec = get_recording(st, id).await?.recording;
     let unprocessable = |m: String| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, m);
     if rec.status == Status::Broken {
@@ -182,144 +169,12 @@ async fn open_data(st: &AppState, id: i64) -> ApiResult<Data> {
             format!("source {} not configured", rec.source),
         )
     })?;
-    Ok(Data {
-        src,
-        key,
-        dt,
-        num_samples,
-    })
+    Ok(SampleReader::new(src, key, dt, num_samples))
 }
 
-#[derive(Debug, Deserialize)]
-struct OverviewParams {
-    fft: Option<usize>,
-    rows: Option<usize>,
-    window: Option<Window>,
-}
-
-/// Sets the cancel flag when the request future is dropped (client went away).
-struct CancelOnDrop(Arc<AtomicBool>);
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-}
-
-/// Strided overview of a whole recording (ADR 0003): `rows` evenly spaced FFTs.
-/// Body: `rows × fft` little-endian `u16`, quantised dB, fftshifted, row-major.
-async fn overview(
-    State(st): St,
-    Path(id): Path<i64>,
-    Query(p): Query<OverviewParams>,
-) -> ApiResult<Response> {
-    let Data {
-        src,
-        key,
-        dt,
-        num_samples,
-    } = open_data(&st, id).await?;
-    let fft = p.fft.unwrap_or(1024);
-    let rows = p.rows.unwrap_or(1024).clamp(1, MAX_ROWS);
-    let spec = Spectrogram::new(dt, fft, p.window.unwrap_or_default())
-        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
-    if rows * fft > MAX_CELLS {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "rows × fft too large",
-        ));
-    }
-
-    let ss = dt.sample_size() as u64;
-    let end = num_samples * ss;
-    let offsets = strided_offsets(num_samples, fft, rows);
-    let ranges: Vec<Range<u64>> = offsets
-        .iter()
-        .map(|o| o * ss..(o * ss + spec.row_bytes() as u64).min(end))
-        .collect();
-
-    let cancel = Arc::new(AtomicBool::new(false));
-    let _guard = CancelOnDrop(cancel.clone());
-
-    let t_read = Instant::now();
-    let chunks = src.get_ranges(&key, &ranges).await?;
-    let read_ms = t_read.elapsed().as_secs_f64() * 1e3;
-
-    let t_fft = Instant::now();
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rayon::spawn(move || {
-        let _ = tx.send(spec.rows(&chunks, &cancel));
-    });
-    let data = rx
-        .await
-        .map_err(anyhow::Error::from)?
-        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    let fft_ms = t_fft.elapsed().as_secs_f64() * 1e3;
-
-    let mut body = Vec::with_capacity(data.len() * 2);
-    for v in &data {
-        body.extend_from_slice(&v.to_le_bytes());
-    }
-
-    let mut h = HeaderMap::new();
-    let mut set = |k: &'static str, v: String| {
-        h.insert(k, HeaderValue::from_str(&v).expect("ascii header"));
-    };
-    set("content-type", "application/octet-stream".into());
-    set("x-trfiq-fft", fft.to_string());
-    set("x-trfiq-rows", offsets.len().to_string());
-    set("x-trfiq-mode", "strided".into());
-    set("x-trfiq-db-min", quant::DB_MIN.to_string());
-    set("x-trfiq-db-step", quant::DB_STEP.to_string());
-    // Rows are evenly spaced from sample 0 to this offset (inclusive).
-    set(
-        "x-trfiq-last-offset",
-        offsets.last().copied().unwrap_or(0).to_string(),
-    );
-    set(
-        "server-timing",
-        format!("read;dur={read_ms:.1}, fft;dur={fft_ms:.1}"),
-    );
-    set(header::CACHE_CONTROL.as_str(), "private, max-age=60".into());
-    tracing::debug!(id, fft, rows = offsets.len(), read_ms, fft_ms, "overview");
-    Ok((h, body).into_response())
-}
-
-// ---- detail plots ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct WindowParams {
-    /// First sample (default 0) and sample count (default: to the end of the recording).
-    start: Option<u64>,
-    count: Option<u64>,
-    /// Time plot: buckets in the min/max envelope.
-    points: Option<usize>,
-    /// PSD: FFT size and window.
-    fft: Option<usize>,
-    window: Option<Window>,
-}
-
-impl WindowParams {
-    /// The requested window clamped to the recording.
-    fn range(&self, num_samples: u64) -> (u64, u64) {
-        let start = self.start.unwrap_or(0).min(num_samples - 1);
-        let count = self
-            .count
-            .unwrap_or(num_samples)
-            .clamp(1, num_samples - start);
-        (start, count)
-    }
-}
-
-/// Split one contiguous read into per-part slices; `bounds` are sample offsets from its start.
-fn split(buf: &Bytes, bounds: impl Iterator<Item = (u64, u64)>, ss: u64) -> Vec<Bytes> {
-    let len = buf.len() as u64;
-    bounds
-        .map(|(a, b)| buf.slice(((a * ss).min(len)) as usize..((b * ss).min(len)) as usize))
-        .collect()
-}
-
-fn f32_body(data: &[f32]) -> Vec<u8> {
-    data.iter().flat_map(|v| v.to_le_bytes()).collect()
+fn spectrogram(dt: Datatype, fft: Option<usize>, window: Option<Window>) -> ApiResult<Spectrogram> {
+    Spectrogram::new(dt, fft.unwrap_or(1024), window.unwrap_or_default())
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))
 }
 
 fn binary(headers: &[(&'static str, String)], body: Vec<u8>) -> Response {
@@ -338,6 +193,79 @@ fn binary(headers: &[(&'static str, String)], body: Vec<u8>) -> Response {
     (h, body).into_response()
 }
 
+fn f32_body(data: &[f32]) -> Vec<u8> {
+    data.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+#[derive(Debug, Deserialize)]
+struct OverviewParams {
+    fft: Option<usize>,
+    rows: Option<usize>,
+    window: Option<Window>,
+}
+
+/// Overview of a whole recording (ADR 0003): one FFT per row, rows spread over the file.
+/// Body: `rows × fft` little-endian `u16`, quantised dB, fftshifted, row-major.
+async fn overview(
+    State(st): St,
+    Path(id): Path<i64>,
+    Query(p): Query<OverviewParams>,
+) -> ApiResult<Response> {
+    let reader = open_reader(&st, id).await?;
+    let spec = spectrogram(reader.datatype(), p.fft, p.window)?;
+    let fft = spec.fft_size();
+    let rows = p.rows.unwrap_or(1024).clamp(1, MAX_ROWS);
+    if rows * fft > MAX_CELLS {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "rows × fft too large",
+        ));
+    }
+    let plan = ReadPlan::overview(reader.num_samples(), rows as u64, fft as u64);
+    let last_offset = plan.slots().last().map_or(0, |r| r.start);
+    let t = reader
+        .run(&plan, move |chunks, cancel| spec.rows(chunks, cancel))
+        .await?;
+    let rows = plan.slots().len();
+    tracing::debug!(id, fft, rows, t.read_ms, t.compute_ms, "overview");
+
+    let body = t.value.iter().flat_map(|v| v.to_le_bytes()).collect();
+    Ok(binary(
+        &[
+            ("x-trfiq-fft", fft.to_string()),
+            ("x-trfiq-rows", rows.to_string()),
+            ("x-trfiq-mode", "strided".into()),
+            ("x-trfiq-db-min", quant::DB_MIN.to_string()),
+            ("x-trfiq-db-step", quant::DB_STEP.to_string()),
+            // Rows are evenly spaced from sample 0 to this offset (inclusive).
+            ("x-trfiq-last-offset", last_offset.to_string()),
+            ("server-timing", t.server_timing()),
+        ],
+        body,
+    ))
+}
+
+// ---- detail plots ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct WindowParams {
+    /// First sample (default 0) and sample count (default: to the end of the recording).
+    start: Option<u64>,
+    count: Option<u64>,
+    /// Time plot: buckets in the min/max envelope.
+    points: Option<usize>,
+    /// PSD: FFT size and window.
+    fft: Option<usize>,
+    window: Option<Window>,
+}
+
+impl WindowParams {
+    fn window(&self, num_samples: u64) -> ApiResult<SampleWindow> {
+        SampleWindow::new(self.start, self.count, num_samples)
+            .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))
+    }
+}
+
 /// Time-domain I/Q for `[start, start + count)`, normalised to ±1.
 ///
 /// - `x-trfiq-mode: raw`: `count × [i, q]` little-endian `f32`.
@@ -348,51 +276,40 @@ async fn time(
     Path(id): Path<i64>,
     Query(p): Query<WindowParams>,
 ) -> ApiResult<Response> {
-    let d = open_data(&st, id).await?;
-    let (start, count) = p.range(d.num_samples);
-    let ss = d.dt.sample_size() as u64;
-    let t0 = Instant::now();
-
-    let (mode, buckets, data) = if count <= RAW_MAX {
-        let r = start * ss..(start + count) * ss;
-        let buf = d.src.get_ranges(&d.key, &[r]).await?.remove(0);
-        ("raw", count, timeseries::iq(d.dt, &buf))
+    let reader = open_reader(&st, id).await?;
+    let w = p.window(reader.num_samples())?;
+    let dt = reader.datatype();
+    let (mode, points, t) = if w.count <= RAW_MAX {
+        let plan = ReadPlan::segments(w, w.count);
+        let t = reader
+            .run(&plan, move |chunks, _| Ok(timeseries::iq(dt, &chunks[0])))
+            .await?;
+        ("raw", w.count, t)
     } else {
         let buckets = p.points.unwrap_or(2048).clamp(64, 8192) as u64;
-        let edge = |b: u64| b * count / buckets;
-        let chunks = if count <= DETAIL_CAP {
-            let r = start * ss..(start + count) * ss;
-            let buf = d.src.get_ranges(&d.key, &[r]).await?.remove(0);
-            split(&buf, (0..buckets).map(|b| (edge(b), edge(b + 1))), ss)
-        } else {
-            let per = DETAIL_CAP / buckets;
-            let ranges: Vec<_> = (0..buckets)
-                .map(|b| (start + edge(b)) * ss..(start + edge(b) + per) * ss)
-                .collect();
-            d.src.get_ranges(&d.key, &ranges).await?
-        };
-        let mode = if count <= DETAIL_CAP {
-            "minmax"
-        } else {
+        let plan = ReadPlan::detail(w, Coverage::Buckets(buckets));
+        let mode = if plan.is_sampled() {
             "sampled"
+        } else {
+            "minmax"
         };
-        let dt = d.dt;
-        let env = tokio::task::spawn_blocking(move || timeseries::envelope(dt, &chunks))
-            .await
-            .map_err(anyhow::Error::from)?;
-        (mode, buckets, env)
+        let t = reader
+            .run(&plan, move |chunks, cancel| {
+                timeseries::envelope(dt, chunks, cancel)
+            })
+            .await?;
+        (mode, plan.slots().len() as u64, t)
     };
-    let ms = t0.elapsed().as_secs_f64() * 1e3;
-    tracing::debug!(id, start, count, mode, ms, "time");
+    tracing::debug!(id, w.start, w.count, mode, t.read_ms, t.compute_ms, "time");
     Ok(binary(
         &[
             ("x-trfiq-mode", mode.into()),
-            ("x-trfiq-start", start.to_string()),
-            ("x-trfiq-count", count.to_string()),
-            ("x-trfiq-points", buckets.to_string()),
-            ("server-timing", format!("total;dur={ms:.1}")),
+            ("x-trfiq-start", w.start.to_string()),
+            ("x-trfiq-count", w.count.to_string()),
+            ("x-trfiq-points", points.to_string()),
+            ("server-timing", t.server_timing()),
         ],
-        f32_body(&data),
+        f32_body(&t.value),
     ))
 }
 
@@ -405,62 +322,39 @@ async fn psd(
     Path(id): Path<i64>,
     Query(p): Query<WindowParams>,
 ) -> ApiResult<Response> {
-    let d = open_data(&st, id).await?;
-    let (start, count) = p.range(d.num_samples);
-    let fft = p.fft.unwrap_or(1024);
-    let spec = Spectrogram::new(d.dt, fft, p.window.unwrap_or_default())
-        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
-    let ss = d.dt.sample_size() as u64;
-    let n = fft as u64;
-    let available = (count / n).max(1);
-    let max_segments = (DETAIL_CAP / n).max(1);
-
-    let t_read = Instant::now();
-    let (mode, chunks) = if available <= max_segments {
-        let r = start * ss..(start + (available * n).min(count)) * ss;
-        let buf = d.src.get_ranges(&d.key, &[r]).await?.remove(0);
-        let chunks = split(&buf, (0..available).map(|i| (i * n, (i + 1) * n)), ss);
-        ("full", chunks)
-    } else {
-        let end = (start + count) * ss;
-        let ranges: Vec<_> = strided_offsets(count, fft, max_segments as usize)
-            .into_iter()
-            .map(|o| (start + o) * ss..((start + o + n) * ss).min(end))
-            .collect();
-        ("strided", d.src.get_ranges(&d.key, &ranges).await?)
-    };
-    let read_ms = t_read.elapsed().as_secs_f64() * 1e3;
-
-    let cancel = Arc::new(AtomicBool::new(false));
-    let _guard = CancelOnDrop(cancel.clone());
-    let t_fft = Instant::now();
-    let segments = chunks.len();
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rayon::spawn(move || {
-        let _ = tx.send(spec.psd(&chunks, &cancel));
-    });
-    let (mean, max) = rx
-        .await
-        .map_err(anyhow::Error::from)?
-        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    let fft_ms = t_fft.elapsed().as_secs_f64() * 1e3;
+    let reader = open_reader(&st, id).await?;
+    let w = p.window(reader.num_samples())?;
+    let spec = spectrogram(reader.datatype(), p.fft, p.window)?;
+    let fft = spec.fft_size();
+    let plan = ReadPlan::detail(w, Coverage::Segments(fft as u64));
+    let mode = if plan.is_sampled() { "strided" } else { "full" };
+    let segments = plan.slots().len();
+    let t = reader
+        .run(&plan, move |chunks, cancel| spec.psd(chunks, cancel))
+        .await?;
     tracing::debug!(
-        id, start, count, fft, segments, mode, read_ms, fft_ms, "psd"
+        id,
+        w.start,
+        w.count,
+        fft,
+        segments,
+        mode,
+        t.read_ms,
+        t.compute_ms,
+        "psd"
     );
 
-    let mut body = f32_body(&mean);
-    body.extend(f32_body(&max));
+    let (mean, max) = &t.value;
+    let mut body = f32_body(mean);
+    body.extend(f32_body(max));
     Ok(binary(
         &[
             ("x-trfiq-mode", mode.into()),
             ("x-trfiq-fft", fft.to_string()),
             ("x-trfiq-segments", segments.to_string()),
-            ("x-trfiq-start", start.to_string()),
-            ("x-trfiq-count", count.to_string()),
-            (
-                "server-timing",
-                format!("read;dur={read_ms:.1}, fft;dur={fft_ms:.1}"),
-            ),
+            ("x-trfiq-start", w.start.to_string()),
+            ("x-trfiq-count", w.count.to_string()),
+            ("server-timing", t.server_timing()),
         ],
         body,
     ))

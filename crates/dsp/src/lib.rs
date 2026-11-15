@@ -10,7 +10,7 @@ pub mod timeseries;
 pub mod window;
 
 pub use datatype::Datatype;
-pub use spectrum::{Spectrogram, strided_offsets};
+pub use spectrum::Spectrogram;
 pub use window::Window;
 
 /// Smallest and largest FFT sizes the API accepts.

@@ -158,20 +158,6 @@ fn to_db(p: f32) -> f32 {
     10.0 * (p + 1e-30).log10()
 }
 
-/// Sample offsets for a strided overview: `rows` evenly spaced FFT-sized reads covering
-/// the whole recording. Files with fewer than `rows` FFTs worth of samples are read
-/// contiguously instead (one row per non-overlapping FFT).
-pub fn strided_offsets(num_samples: u64, n: usize, rows: usize) -> Vec<u64> {
-    let n = n as u64;
-    let available = (num_samples / n).max(1);
-    if available <= rows as u64 {
-        return (0..available).map(|i| i * n).collect();
-    }
-    let rows = rows.max(2) as u64;
-    let span = num_samples - n;
-    (0..rows).map(|i| i * span / (rows - 1)).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,13 +232,5 @@ mod tests {
         for n in [0, 8, 1000, 131072] {
             assert!(Spectrogram::new(dt, n, Window::Hann).is_err());
         }
-    }
-
-    #[test]
-    fn strided_offsets_cover_file() {
-        assert_eq!(strided_offsets(4096, 1024, 100), vec![0, 1024, 2048, 3072]);
-        assert_eq!(strided_offsets(10, 1024, 100), vec![0]);
-        let o = strided_offsets(1_000_000, 1024, 3);
-        assert_eq!(o, vec![0, (1_000_000 - 1024) / 2, 1_000_000 - 1024]);
     }
 }

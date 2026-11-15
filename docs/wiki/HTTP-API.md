@@ -6,7 +6,7 @@ the same port as the UI.
 - Errors are JSON, `{"error": "message"}`, with status `400` (bad parameters), `404` (no such
   recording or source), `422` (the recording can't be read: broken, no datatype or empty) or `500`.
 - Binary responses are little-endian. They describe their layout in `x-trfiq-*` headers and
-  report a `Server-Timing` breakdown.
+  report a `Server-Timing` header, `read;dur=…, compute;dur=…` in milliseconds.
 
 ## Sources
 
@@ -59,6 +59,9 @@ The same fields plus `meta`, the full SigMF metadata document.
 
 All three endpoints read only the byte ranges they need. They stop computing if the client
 disconnects.
+
+`start` and `count` pick a sample window. A window that runs past the end of the recording is
+trimmed to it; one that starts at or past the end, or has `count=0`, is a `400`.
 
 ### `GET /api/recordings/{id}/overview`
 

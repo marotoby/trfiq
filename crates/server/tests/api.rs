@@ -133,6 +133,12 @@ async fn list_detail_and_overview() {
     assert_eq!(h["x-trfiq-segments"], "1");
     assert_eq!(body.len(), 2 * 256 * 4);
 
+    // Windows starting past the end, or empty, are rejected.
+    for q in [format!("start={n}"), "count=0".into()] {
+        let (code, _, _) = get(&app, &format!("/api/recordings/{id}/time?{q}")).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{q}");
+    }
+
     let (code, _, _) = get(&app, &format!("/api/recordings/{id}/overview?fft=1000")).await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
     let (code, _, _) = get(&app, "/api/recordings/999").await;

@@ -593,7 +593,7 @@ function Spectrogram(p: SpectrogramProps) {
   useEffect(() => viewRef.current?.setShowAnnotations(p.showAnnotations), [p.showAnnotations, viewRef])
   useEffect(() => viewRef.current?.setSelected(p.selected), [p.selected, viewRef])
 
-  const timing = p.overview?.timing.match(/read;dur=([\d.]+).*fft;dur=([\d.]+)/)
+  const timing = p.overview?.timing.match(/read;dur=([\d.]+).*compute;dur=([\d.]+)/)
 
   return (
     <>
