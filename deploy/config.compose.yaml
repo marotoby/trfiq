@@ -1,0 +1,17 @@
+# Config used by deploy/compose.yml: one S3 source and one local folder with the same samples.
+listen: 0.0.0.0:8080
+data_dir: /var/lib/trfiq
+scan_interval_secs: 60
+
+sources:
+  - id: s3
+    name: S3 (RustFS)
+    kind: s3
+    endpoint: http://s3:9000
+    bucket: recordings
+    access_key_id: ${S3_ACCESS_KEY_ID}
+    secret_access_key: ${S3_SECRET_ACCESS_KEY}
+  - id: local
+    name: Local folder
+    kind: local
+    path: /mnt/samples

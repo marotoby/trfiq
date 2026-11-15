@@ -1,0 +1,70 @@
+# Full demo stack: S3 server + generated sample recordings + trfiq.
+#   docker compose -f deploy/compose.yml up --build      → http://localhost:8080
+#
+# The S3 server is RustFS (MinIO-compatible; MinIO no longer publishes community images).
+# Point trfiq at your real MinIO by editing config.compose.yaml or using config.example.yaml.
+#
+# podman-compose can't start `trfiq` here: it maps depends_on to podman's --requires, which
+# needs `seed` to still be running. Use Docker Compose, or `podman start` trfiq after seed exits.
+
+name: trfiq
+
+x-s3-creds: &s3-creds
+  S3_ACCESS_KEY_ID: trfiq
+  S3_SECRET_ACCESS_KEY: trfiq-dev-secret
+
+services:
+  s3:
+    image: docker.io/rustfs/rustfs:1.0.5
+    environment:
+      RUSTFS_ACCESS_KEY: trfiq
+      RUSTFS_SECRET_KEY: trfiq-dev-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [s3-data:/data]
+
+  # Generate demo recordings once into a volume.
+  samples:
+    image: docker.io/library/python:3.13-alpine
+    volumes:
+      - ../scripts/gen_samples.py:/gen_samples.py:ro,z
+      - samples:/out
+    command: ["python3", "/gen_samples.py", "/out"]  # skips files that already exist
+
+  # Upload them to the bucket (idempotent).
+  seed:
+    image: docker.io/rclone/rclone:1.76.0
+    depends_on:
+      s3: { condition: service_started }
+      samples: { condition: service_completed_successfully }
+    environment:
+      RCLONE_CONFIG_S3_TYPE: s3
+      RCLONE_CONFIG_S3_PROVIDER: Other
+      RCLONE_CONFIG_S3_ENDPOINT: http://s3:9000
+      RCLONE_CONFIG_S3_ACCESS_KEY_ID: trfiq
+      RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: trfiq-dev-secret
+    volumes: [samples:/samples:ro]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        for i in $$(seq 30); do rclone lsd s3: >/dev/null 2>&1 && break; sleep 1; done
+        rclone mkdir s3:recordings && rclone copy /samples s3:recordings && rclone ls s3:recordings
+
+  trfiq:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    image: localhost/trfiq:dev
+    depends_on:
+      seed: { condition: service_completed_successfully }
+    environment:
+      <<: *s3-creds
+      RUST_LOG: info,trfiq_server=debug
+    ports: ["8080:8080"]
+    volumes:
+      - ./config.compose.yaml:/etc/trfiq/config.yaml:ro,z
+      - trfiq-data:/var/lib/trfiq
+      - samples:/mnt/samples:ro
+    restart: unless-stopped
+
+volumes:
+  s3-data:
+  samples:
+  trfiq-data:

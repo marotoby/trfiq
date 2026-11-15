@@ -1,0 +1,26 @@
+# trfiq configuration. Mount your own at /etc/trfiq/config.yaml.
+# ${VAR} and ${VAR:-default} are replaced from the environment; an unset ${VAR} without a
+# default stops startup, so a missing secret is caught immediately.
+
+listen: 0.0.0.0:8080
+# Index and caches only. Recordings are never written (sources are read-only).
+data_dir: /var/lib/trfiq
+# Incremental rescan interval; the UI's "Rescan" button triggers one immediately.
+scan_interval_secs: 300
+
+sources:
+  # MinIO / any S3-compatible server. Needs only s3:ListBucket + s3:GetObject.
+  - id: minio
+    name: MinIO recordings
+    kind: s3
+    endpoint: ${S3_ENDPOINT:-http://minio:9000}
+    bucket: ${S3_BUCKET:-recordings}
+    access_key_id: ${S3_ACCESS_KEY_ID}
+    secret_access_key: ${S3_SECRET_ACCESS_KEY}
+    # prefix: captures/2026/      # optional: only index under this prefix
+    # max_concurrency: 32         # optional: concurrent requests to this server
+
+  # A folder mounted into the container (mount it read-only).
+  # - id: archive
+  #   kind: local
+  #   path: /mnt/recordings
