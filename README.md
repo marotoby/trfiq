@@ -1,70 +1,216 @@
-# trfiq
+<p align="center">
+  <img src="docs/images/logo.svg" alt="T-RF/IQ" width="760">
+</p>
 
-A fast, self-hosted, **read-only visualiser and indexer for IQ recordings** (SigMF and raw),
-built as an alternative to IQEngine. S3/MinIO first; local folders work through the same code
-path. One container.
+<p align="center">
+  <b>A fast, self-hosted explorer for IQ recordings. S3/MinIO first.</b><br>
+  SigMF and raw captures · FFT on the server in Rust · WebGL2 spectrogram · instant search across buckets
+</p>
 
-- **Index:** recordings across S3 buckets and local folders are indexed in SQLite and refreshed
-  incrementally (only changed `.sigmf-meta` files are re-read). The list and search come from the
-  index, so they're instant even with tens of thousands of objects.
-- **Spectrogram:** FFTs run on the server in Rust, reading only the byte ranges they need. The
-  browser receives quantised dB and colours it in a WebGL2 shader, so colormap and dB-range
-  changes are instant and large files never reach the browser.
-- **Safe:** trfiq never writes to your buckets; it only needs list/get permissions.
+<p align="center">
+  <a href="https://github.com/marotoby/trfiq/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/marotoby/trfiq/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Rust 1.100" src="https://img.shields.io/badge/rust-1.100-dea584?logo=rust&logoColor=white">
+  <img alt="React 19" src="https://img.shields.io/badge/react-19-61dafb?logo=react&logoColor=white">
+  <img alt="SigMF" src="https://img.shields.io/badge/format-SigMF-22d3ee">
+  <img alt="Image size" src="https://img.shields.io/badge/image-44%20MB-0ea5e9?logo=docker&logoColor=white">
+  <img alt="Conventional Commits" src="https://img.shields.io/badge/commits-conventional-fe5196?logo=conventionalcommits&logoColor=white">
+</p>
 
-Design and decisions: [`docs/DESIGN.md`](docs/DESIGN.md), [`docs/adr/`](docs/adr/).
+<p align="center">
+  <img src="docs/images/screenshot-viewer.jpg" alt="T-RF/IQ viewer showing an annotated 433 MHz recording" width="100%">
+</p>
 
-## Quick start (demo stack)
+---
+
+**T-RF/IQ** (repo and binary: `trfiq`) indexes the IQ recordings in your S3 buckets and local
+folders and lets you browse, search and inspect them in the browser. It's built as a faster, more
+stable alternative to IQEngine. The hard work happens on the server, so the browser stays
+responsive even on 100 GB files.
+
+- **Instant browsing.** Recordings are indexed in SQLite and refreshed incrementally: only metadata
+  whose ETag changed is re-read. Listing and searching 10k+ recordings is a local query.
+- **Big files, small transfers.** The server reads only the byte ranges it needs, runs the FFTs in
+  Rust and sends quantised dB. Raw samples never travel to the browser.
+- **Smooth viewer.** A WebGL2 spectrogram applies colormap and levels in the shader: they change
+  instantly, with no refetch. Pan and zoom run at display rate.
+- **Safe by design.** T-RF/IQ never writes to your buckets; it only needs list and get permissions.
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Connect your MinIO / S3](#connect-your-minio--s3)
+- [Using the viewer](#using-the-viewer)
+- [How it works](#how-it-works)
+- [Performance](#performance)
+- [HTTP API](#http-api)
+- [Development](#development)
+- [Roadmap](#roadmap)
+
+## Features
+
+| | |
+|---|---|
+| **Sources** | Any number of S3-compatible buckets (MinIO, AWS, RustFS, …) and local folders, side by side |
+| **Formats** | SigMF pairs in every datatype (`cf64 cf32 ci32 ci16 ci8 cu32 cu16 cu8`, real variants, LE/BE); raw `.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` with the datatype guessed from the extension |
+| **Index & search** | Full-text search over names, descriptions, hardware and annotation labels; filter by status, datatype, frequency band and capture date |
+| **Spectrogram** | FFT 256 to 16384, Hann / Blackman-Harris / rectangular windows, turbo / viridis / gray colormaps, max-hold downsampling so short bursts never vanish when zoomed out |
+| **Navigation** | Box zoom with live Δf/Δt, wheel zoom per axis, drag to pan, zoom history, keyboard control |
+| **Annotations** | SigMF annotations drawn as labelled boxes; a side panel to filter by label and click to zoom |
+| **Shareable** | Every view (file, FFT, colormap, levels, zoom) lives in the URL, so a link reproduces it exactly |
+| **Operations** | One 44 MB distroless non-root image, `/healthz` and `/readyz`, JSON logs, per-source scan status in the UI |
+
+<p align="center">
+  <img src="docs/images/screenshot-recordings.jpg" alt="Recording list with source status and search" width="49%">
+  <img src="docs/images/screenshot-box-zoom.jpg" alt="Box zoom with live delta-f and delta-t" width="49%">
+</p>
+
+## Quick start
+
+Run the demo stack: an S3 server, generated demo recordings and T-RF/IQ.
 
 ```sh
+git clone git@github.com:marotoby/trfiq.git && cd trfiq
 docker compose -f deploy/compose.yml up --build
-# → http://localhost:8080   (S3 console: http://localhost:9001, trfiq / trfiq-dev-secret)
 ```
 
-This starts an S3 server (RustFS, MinIO-compatible), generates demo recordings, uploads them to
-bucket `recordings`, and runs trfiq with that bucket and the same files as a local folder.
+Open **http://localhost:8080**. The S3 console is at http://localhost:9001 (`trfiq` / `trfiq-dev-secret`).
 
-> **podman-compose:** it can't start a service that depends on a one-shot service having
-> *completed* (`seed`), so `trfiq` stays in "Created". Use Docker Compose, or run `podman start`
-> on the trfiq container after `seed` has finished.
+The demo includes FM stations, chirps, short bursts, a raw rtl_sdr capture, a deliberately broken
+pair, and **`demo/ism_433_annotated`**: a simulated 433 MHz band with 19 annotations (OOK keyfob,
+2-FSK sensors, LoRa, a Morse CW beacon and a sweep jammer).
 
-## Running against your MinIO
+> The demo S3 server is [RustFS](https://github.com/rustfs/rustfs), a MinIO-compatible server,
+> because MinIO no longer publishes community images. T-RF/IQ talks plain S3, so your own MinIO
+> works unchanged.
+>
+> **podman-compose** can't start a service that waits for a one-shot service to *finish*, so
+> `trfiq` stays "Created". Use Docker Compose, or `podman start` the trfiq container once `seed`
+> has exited.
+
+## Connect your MinIO / S3
 
 ```sh
+docker build -f deploy/Dockerfile -t trfiq .
+
 docker run -d --name trfiq -p 8080:8080 \
-  -e S3_ENDPOINT=http://minio.lan:9000 -e S3_BUCKET=recordings \
+  -e S3_ENDPOINT=http://minio.lan:9000 \
+  -e S3_BUCKET=recordings \
   -e S3_ACCESS_KEY_ID=… -e S3_SECRET_ACCESS_KEY=… \
   -v trfiq-data:/var/lib/trfiq \
   trfiq
 ```
 
-The built-in config ([`deploy/config.example.yaml`](deploy/config.example.yaml)) reads those
-variables. For several buckets/endpoints or local folders, mount your own config at
-`/etc/trfiq/config.yaml`. The volume holds only the index and caches, and can be deleted at any
-time; it's rebuilt by rescanning.
+Read-only credentials are enough (`s3:ListBucket`, `s3:GetObject`). The volume holds only the index
+and caches; delete it any time and it's rebuilt by rescanning.
 
-Build the image: `docker build -f deploy/Dockerfile -t trfiq .`
+For several buckets, endpoints or local folders, mount your own config at `/etc/trfiq/config.yaml`:
 
-### Recording statuses
+```yaml
+listen: 0.0.0.0:8080
+data_dir: /var/lib/trfiq
+scan_interval_secs: 300          # incremental rescan; the UI also has a Rescan button
+
+sources:
+  - id: lab                      # stable id used in URLs and the index
+    name: Lab MinIO
+    kind: s3
+    endpoint: http://minio.lan:9000
+    bucket: recordings
+    prefix: captures/            # optional
+    access_key_id: ${S3_ACCESS_KEY_ID}           # ${VAR} / ${VAR:-default} from the environment;
+    secret_access_key: ${S3_SECRET_ACCESS_KEY}   # an unset ${VAR} stops startup, loudly
+  - id: archive
+    kind: local
+    path: /mnt/recordings        # mount it read-only
+```
+
+### Recording status
 
 | Status | Meaning |
 |---|---|
-| ok | SigMF pair with valid metadata; viewable |
-| needs meta | Raw file (`.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` …); datatype guessed from the extension where possible |
-| broken | Half of a SigMF pair is missing, or the metadata doesn't parse |
+| **Ready** | Valid SigMF pair; viewable |
+| **Needs metadata** | Raw file; the datatype is guessed from the extension where a convention exists |
+| **Broken** | Half of a SigMF pair is missing, or the metadata doesn't parse (the UI says which) |
+
+## Using the viewer
+
+| Action | Mouse | Keyboard |
+|---|---|---|
+| Zoom into a region | Drag a box (Zoom mode) | |
+| Pan | Drag (Pan mode), or right/middle-drag in any mode | Arrow keys |
+| Zoom time / frequency | Wheel / Shift+wheel (Ctrl+wheel: both) | `+` `−` / `]` `[` |
+| Previous view | Back button | Backspace |
+| Show everything | Double-click, or the fit button | `0` |
+| Zoom / pan mode | Toolbar toggle | `Z` / `H` |
+| Annotations | Click a box, or an item in the side panel to zoom to it | `A` toggles the overlay |
+| Levels | Drag the two handles on the colorbar; **Auto** resets | |
+
+Hovering shows frequency, time, power and the annotation under the cursor.
+
+## How it works
+
+```mermaid
+flowchart LR
+  B[Browser<br/>React + WebGL2] -- "search / metadata (JSON)" --> API
+  B -- "u16 dB rows (zstd)" --> API
+  subgraph T[trfiq: one Rust binary]
+    API[axum API] --> IDX[(SQLite + FTS5 index)]
+    API --> DSP[DSP: decode → window → FFT → dB → u16]
+    SCAN[Scanner<br/>ETag-incremental] --> IDX
+    DSP --> ST[object_store]
+    SCAN --> ST
+  end
+  ST -- "range reads only" --> S3[(MinIO / S3)]
+  ST --> FS[(Local folders)]
+```
+
+- **Storage:** every source is an [`object_store`](https://docs.rs/object_store) backend, so S3 and
+  local folders share one code path. Requests are batched, coalesced and capped per source.
+- **Spectrogram data:** power in dBFS, quantised to `u16` (`dB = -200 + q × 0.005`). Colour is
+  applied on the GPU, so display changes are free
+  ([ADR 2](docs/adr/0002-server-side-u16-db-tiles.md)).
+- **Overview:** the first view of a file uses ~1k evenly spaced FFTs, so even 100 GB opens instantly
+  ([ADR 3](docs/adr/0003-strided-overview-then-maxhold-pyramid.md)).
+- **Cancellation:** when the browser abandons a request (you zoomed away), the server stops reading
+  and computing.
+
+Full design: [`docs/DESIGN.md`](docs/DESIGN.md) · decisions: [`docs/adr/`](docs/adr/).
+
+## Performance
+
+Measured on the demo stack (S3 on localhost):
+
+| Operation | Budget | Measured |
+|---|---|---|
+| Recording list from the index | < 300 ms | a few ms |
+| First overview of a file (1024 × 1024) | < 2 s | 16 to 32 ms end to end from S3 |
+| Colormap / levels change | instant | no request, shader only |
+| Incremental rescan, unchanged bucket | | a few ms (metadata is not re-read) |
+
+The 100 GB load test is on the roadmap.
+
+## HTTP API
+
+| Endpoint | |
+|---|---|
+| `GET /api/sources` | Sources with scan status and counts per status |
+| `POST /api/sources/{id}/rescan` | Trigger an incremental rescan |
+| `GET /api/recordings?q=&source=&status=&datatype=&fmin=&fmax=&from=&to=&limit=` | Search the index (`q`: prefix full-text; `fmin`/`fmax`: band overlap in Hz) |
+| `GET /api/recordings/{id}` | One recording plus its full SigMF metadata |
+| `GET /api/recordings/{id}/overview?fft=&rows=&window=` | `rows × fft` little-endian `u16` (fftshifted); headers carry the layout and a `Server-Timing` breakdown |
+| `GET /healthz` · `GET /readyz` | Liveness; readiness (every source scanned at least once) |
 
 ## Development
 
-Requires podman (or Docker) and [bun](https://bun.sh). No host Rust toolchain needed:
+You need podman (or Docker) and [bun](https://bun.sh). No host Rust toolchain is needed:
 `scripts/cargo.sh` runs cargo in a pinned Rust container.
 
 ```sh
-deploy/dev-s3.sh                       # S3 server on :9000 with demo data in bucket `recordings`
+deploy/dev-s3.sh                       # S3 on :9000 with demo data in bucket `recordings`
 scripts/cargo.sh run --release -p trfiq-server -- --config deploy/config.dev.yaml   # API on :8080
-cd web && bun install && bun run dev   # UI with hot reload on :5173 (proxies /api to :8080)
+cd web && bun install && bun run dev   # UI with hot reload on :5173 (proxies /api)
 ```
-
-Checks:
 
 ```sh
 scripts/cargo.sh fmt --all --check
@@ -74,50 +220,43 @@ cd web && bun run typecheck && bun run build
 cd web && bunx playwright test         # e2e against a running server (TRFIQ_URL, default :8080)
 ```
 
-DSP golden fixtures come from numpy/scipy: `python3 scripts/gen_golden.py`.
+| Path | |
+|---|---|
+| `crates/dsp` | Sample decoding, windows, FFT → quantised dB; golden tests against numpy/scipy |
+| `crates/storage` | S3 / local sources over `object_store` (read-only) |
+| `crates/index` | SQLite + FTS5 index and the incremental scanner |
+| `crates/server` | HTTP API, background scans, embedded UI |
+| `web/` | React + Vite UI, WebGL2 spectrogram, Playwright e2e |
+| `deploy/` | Dockerfile, compose demo stack, example configs |
+| `scripts/` | Demo data, golden fixtures and logo generators, containerised cargo |
 
 ### Commits and releases
 
-Commits follow [Conventional Commits](https://www.conventionalcommits.org) via
-[commitizen](https://commitizen-tools.github.io/commitizen/) (config in `.cz.toml`):
+Commits follow [Conventional Commits](https://www.conventionalcommits.org), checked with
+[commitizen](https://commitizen-tools.github.io/commitizen/) (config in `.cz.toml`).
+[`CHANGELOG.md`](CHANGELOG.md) is generated from them.
 
 ```sh
 uvx --from commitizen cz commit        # guided commit message
-uvx --from commitizen cz bump          # bump version (Cargo.toml + web/package.json), update CHANGELOG.md, tag
+uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/package.json), update the changelog, tag
 ```
 
-## API
+## Roadmap
 
-| Endpoint | |
-|---|---|
-| `GET /api/sources` | Sources with scan status and counts per status |
-| `POST /api/sources/{id}/rescan` | Trigger an incremental rescan |
-| `GET /api/recordings?q=&source=&status=&datatype=&fmin=&fmax=&from=&to=&limit=` | Search the index (`q` is prefix full-text; `fmin`/`fmax` match by band overlap) |
-| `GET /api/recordings/{id}` | One recording plus its full SigMF metadata |
-| `GET /api/recordings/{id}/overview?fft=&rows=&window=` | Strided overview: `rows × fft` little-endian `u16`, `dB = -200 + q × 0.005`, fftshifted |
-| `GET /healthz`, `GET /readyz` | Liveness, and readiness (every source scanned at least once) |
+- [x] S3 + local sources, incremental SQLite/FTS5 index, search and filter API
+- [x] Server-side overview with cancellation; WebGL2 spectrogram with max-hold downsampling
+- [x] Box zoom, zoom history, keyboard navigation, deep links
+- [x] SigMF annotation overlay and panel
+- [x] Distroless image, compose demo stack, numpy golden tests, Playwright e2e, CI
+- [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading
+- [ ] Background max-hold pyramid and an LRU disk tile cache
+- [ ] Detail plots for a selection: time-domain I/Q, PSD, constellation
+- [ ] Metadata entry for raw files (stored in the index), with JSON export/import
+- [ ] Frequency and date filters in the UI (the API already supports them)
+- [ ] Prometheus `/metrics`
+- [ ] Byte-plane shuffle before compression
+- [ ] 100 GB synthetic-file load test against the performance budgets
 
-## Status
+---
 
-Done (first vertical slice):
-- Cargo workspace (`dsp`, `storage`, `index`, `server`) with tests, including numpy golden tests
-  for 11 datatypes × 3 windows
-- S3 and local sources, ETag-incremental scanner, SQLite + FTS5 index, search/filter API
-- Strided overview endpoint with cancellation when the client disconnects
-- React UI: virtualised recording list, source status and rescan, WebGL2 spectrogram with max-hold
-  downsampling, axes, cursor readout, pan/zoom, keyboard navigation, deep links
-- Box zoom with live Δf/Δt readout, zoom history (Back), zoom/pan modes, dual-handle levels on a colorbar
-- SigMF annotation overlay: coloured boxes and labels, a side-panel list (click to zoom), per-label
-  show/hide, hover readout. Demo: `demo/ism_433_annotated` (OOK, 2-FSK, LoRa, Morse CW, jammer)
-- 44 MB distroless non-root image, compose demo stack, Playwright e2e
-
-Next, in order:
-1. Zoomed tiles: full-resolution tiles for the visible region when zoomed past the overview,
-   with the parent shown upscaled while loading
-2. Lazy background max-hold pyramid (ADR 0003) and the local disk tile cache (LRU, size cap)
-3. Detail plots for a selection (time-domain I/Q, PSD, constellation) with uPlot, ~2M sample cap
-4. Raw-file metadata entry in the UI (stored in the index) and JSON export/import
-5. Frequency and date filters in the UI (the API already supports them)
-6. Prometheus `/metrics`
-7. Byte-plane shuffle before compression (raw u16 dB only compresses about 10% today)
-8. 100 GB synthetic-file load test against the performance budgets
+<p align="center"><img src="docs/images/mark.svg" width="32" alt=""><br><sub>T-RF/IQ: see the spectrum, not the spinner.</sub></p>
