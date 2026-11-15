@@ -1,0 +1,10 @@
+{
+  "body_hex": "000080bf0000803f000000bf0000003f",
+  "headers": {
+    "server-timing": "read;dur=1.5, compute;dur=2.0",
+    "x-trfiq-count": "9000000",
+    "x-trfiq-mode": "sampled",
+    "x-trfiq-points": "1",
+    "x-trfiq-start": "5"
+  }
+}

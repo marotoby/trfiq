@@ -12,5 +12,5 @@ cache="${XDG_CACHE_HOME:-$HOME/.cache}/trfiq/cargo"
 mkdir -p "$cache"
 tty=(); [ -t 0 ] && tty=(-it)
 exec podman run --rm "${tty[@]}" --userns=keep-id --network=host \
-  -v "$root:/src:Z" -v "$cache:/cargo:Z" -e CARGO_HOME=/cargo -e RUST_LOG \
+  -v "$root:/src:Z" -v "$cache:/cargo:Z" -e CARGO_HOME=/cargo -e RUST_LOG -e TRFIQ_UPDATE_FIXTURES \
   -w /src "$image" cargo "$@"

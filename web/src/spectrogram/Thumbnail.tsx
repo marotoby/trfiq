@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Recording } from '../api'
+import { dbPercentiles, type Overview } from '../wire'
 import { colormapLut } from './colormaps'
 
 /** FFT size of every thumbnail (its width in pixels). */
@@ -16,15 +17,10 @@ const LUT = colormapLut('turbo')
  * Display range for a thumbnail. Darker than the viewer's: black at the median (≈ the noise
  * floor) so signals stand out at a glance.
  */
-function thumbLevels(data: Uint16Array, q: { dbMin: number; dbStep: number }) {
-  const stride = Math.max(1, Math.floor(data.length / 20_000))
-  const sample: number[] = []
-  for (let i = 0; i < data.length; i += stride) if (data[i] > 0) sample.push(data[i])
-  if (!sample.length) return { lo: -120, hi: 0 }
-  sample.sort((a, b) => a - b)
-  const at = (p: number) => q.dbMin + sample[Math.min(sample.length - 1, Math.floor(p * sample.length))] * q.dbStep
-  const lo = at(0.5)
-  return { lo, hi: Math.max(at(0.9995), lo + 20) }
+function thumbLevels(o: Overview) {
+  const p = dbPercentiles(o, [0.5, 0.9995], 20_000)
+  if (!p) return { lo: -120, hi: 0 }
+  return { lo: p[0], hi: Math.max(p[1], p[0] + 20) }
 }
 
 /** True once the element has been near the viewport (stays true). */
@@ -57,10 +53,10 @@ export function Thumbnail({ r, className }: { r: Recording; className?: string }
     if (!c || !d) return
     c.width = d.fft
     c.height = d.rows
-    const { lo, hi } = thumbLevels(d.data, d)
-    // dB → LUT index, done once per quantised value range instead of per pixel maths.
-    const scale = (255 * d.dbStep) / (hi - lo)
-    const offset = (255 * (d.dbMin - lo)) / (hi - lo)
+    const { lo, hi } = thumbLevels(d)
+    // q → LUT index is linear: 255 · (dbOf(q) − lo) / (hi − lo), folded into scale and offset.
+    const scale = (255 * d.quant.dbStep) / (hi - lo)
+    const offset = (255 * (d.quant.dbMin - lo)) / (hi - lo)
     const img = new ImageData(d.fft, d.rows)
     const px = img.data
     for (let i = 0; i < d.data.length; i++) {

@@ -103,7 +103,7 @@ export function Viewer() {
   })
 
   const auto = useMemo(
-    () => (overview.data ? autoDbRange(overview.data.data, overview.data) : null),
+    () => (overview.data ? autoDbRange(overview.data) : null),
     [overview.data],
   )
   const lo = search.lo ?? auto?.lo ?? -120
@@ -558,7 +558,7 @@ function Spectrogram(p: SpectrogramProps) {
     const v = p.viewRef.current
     if (!v || !p.overview) return
     try {
-      v.setData(p.overview.data, p.overview.fft, p.overview.rows, p.overview)
+      v.setData(p.overview)
       setGlError(null)
     } catch (e) {
       setGlError(String(e))
@@ -574,7 +574,7 @@ function Spectrogram(p: SpectrogramProps) {
   useEffect(() => viewRef.current?.setShowAnnotations(p.showAnnotations), [p.showAnnotations, viewRef])
   useEffect(() => viewRef.current?.setSelected(p.selected), [p.selected, viewRef])
 
-  const timing = p.overview?.timing.match(/read;dur=([\d.]+).*compute;dur=([\d.]+)/)
+  const timing = p.overview?.timing
 
   return (
     <>
@@ -608,7 +608,7 @@ function Spectrogram(p: SpectrogramProps) {
           {p.overview && (
             <>
               {p.overview.mode} overview · {p.overview.rows}×{p.overview.fft}
-              {timing && <> · read {timing[1]} ms · compute {timing[2]} ms</>}
+              {timing && <> · read {timing.readMs} ms · compute {timing.computeMs} ms</>}
             </>
           )}
         </span>

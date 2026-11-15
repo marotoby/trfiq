@@ -38,6 +38,11 @@ The whole-recording spectrogram the viewer opens with: one FFT per row, each cen
 slot (ADR 0003, ADR 0006). Also used, smaller, for thumbnails.
 _Avoid_: tile (reserved for the future full-resolution tiles).
 
+**Wire format**
+The binary layout of an overview, PSD or time response: its `x-trfiq-*` headers, mode values
+and body. Encoded only in `crates/server/src/wire.rs`, decoded only in `web/src/wire.ts`; the
+shared fixtures in `web/src/wire-fixtures/` keep the two in step.
+
 **Detail window**
 The sample window and frequency range visible in the spectrogram, which the Spectrum and Time
 panels analyse. `DetailWindow` in `web/src/geometry.ts`.

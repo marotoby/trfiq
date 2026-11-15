@@ -5,6 +5,8 @@ the same port as the UI.
 
 - Errors are JSON, `{"error": "message"}`, with status `400` (bad parameters), `404` (no such
   recording or source), `422` (the recording can't be read: broken, no datatype or empty) or `500`.
+- Binary layouts are defined in one module per side, `crates/server/src/wire.rs` and
+  `web/src/wire.ts`; read those for the exact details.
 - Binary responses are little-endian. They describe their layout in `x-trfiq-*` headers and
   report a `Server-Timing` header, `read;dur=…, compute;dur=…` in milliseconds.
 

@@ -33,7 +33,7 @@ listing. Each has a structural fix here:
 | `crates/storage` | Sources (S3 or local) behind one `object_store` API: list, head, get, range reads. No write methods exist. A per-source semaphore caps concurrency |
 | `crates/index` | The SQLite schema, FTS5 search and the incremental scanner, which groups objects into recordings, parses SigMF and assigns a status |
 | `crates/dsp` | Decodes every SigMF datatype to complex f32; windows; FFT to dBFS; quantisation; PSD (mean and max hold); min/max envelopes |
-| `crates/server` | The axum API, background scans and the embedded UI (rust-embed). `samples.rs` is the sample-window reader every sample endpoint goes through: window checks, read plans under the 2M-sample detail cap, range reads, cancellable compute and timing |
+| `crates/server` | The axum API, background scans and the embedded UI (rust-embed). `samples.rs` is the sample-window reader every sample endpoint goes through: window checks, read plans under the 2M-sample detail cap, range reads, cancellable compute and timing. `wire.rs` encodes every binary response (decoded by `web/src/wire.ts`) |
 | `web/` | React 19, TanStack Router, Query, Table and Virtual; a WebGL2 spectrogram outside React's render loop; uPlot for the detail plots |
 
 ## Key decisions

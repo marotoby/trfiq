@@ -63,42 +63,12 @@ export interface ListParams {
   status?: Status
 }
 
+import { decodeOverview, decodePsd, decodeTime, type Overview, type PsdData, type TimeData } from './wire'
+
+export type { Overview, PsdData, TimeData } from './wire'
+
 export const WINDOWS = ['hann', 'blackman-harris', 'rect'] as const
 export type WindowFn = (typeof WINDOWS)[number]
-
-export interface Overview {
-  data: Uint16Array
-  fft: number
-  rows: number
-  dbMin: number
-  dbStep: number
-  mode: string
-  timing: string
-}
-
-/** Time-domain I/Q (normalised to ±1) for a window of samples. */
-export interface TimeData {
-  /** raw: `count × [i, q]`. minmax / sampled: `points × [iMin, iMax, qMin, qMax]`. */
-  mode: 'raw' | 'minmax' | 'sampled'
-  start: number
-  count: number
-  points: number
-  data: Float32Array
-  timing: string
-}
-
-/** Power spectrum (dBFS, fftshifted) of a window: mean and max-hold over FFT segments. */
-export interface PsdData {
-  /** full: every segment in the window; strided: evenly spaced segments (window > 2M samples). */
-  mode: 'full' | 'strided'
-  fft: number
-  segments: number
-  start: number
-  count: number
-  mean: Float32Array
-  max: Float32Array
-  timing: string
-}
 
 export interface WindowParams {
   start: number
@@ -159,31 +129,12 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<Overview> => {
     const r = await check(await fetch(`${BASE}/api/recordings/${id}/overview${qs(p)}`, { signal }))
-    const h = (k: string) => r.headers.get(k) ?? ''
-    const buf = await r.arrayBuffer()
-    return {
-      // The server sends little-endian u16; every browser platform we target is little-endian.
-      data: new Uint16Array(buf),
-      fft: Number(h('x-trfiq-fft')),
-      rows: Number(h('x-trfiq-rows')),
-      dbMin: Number(h('x-trfiq-db-min')),
-      dbStep: Number(h('x-trfiq-db-step')),
-      mode: h('x-trfiq-mode'),
-      timing: h('server-timing'),
-    }
+    return decodeOverview((k) => r.headers.get(k), await r.arrayBuffer())
   },
 
   time: async (id: number, p: WindowParams & { points: number }, signal?: AbortSignal): Promise<TimeData> => {
     const r = await check(await fetch(`${BASE}/api/recordings/${id}/time${qs({ ...p })}`, { signal }))
-    const h = (k: string) => r.headers.get(k) ?? ''
-    return {
-      mode: h('x-trfiq-mode') as TimeData['mode'],
-      start: Number(h('x-trfiq-start')),
-      count: Number(h('x-trfiq-count')),
-      points: Number(h('x-trfiq-points')),
-      data: new Float32Array(await r.arrayBuffer()),
-      timing: h('server-timing'),
-    }
+    return decodeTime((k) => r.headers.get(k), await r.arrayBuffer())
   },
 
   psd: async (
@@ -192,18 +143,6 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<PsdData> => {
     const r = await check(await fetch(`${BASE}/api/recordings/${id}/psd${qs({ ...p })}`, { signal }))
-    const h = (k: string) => r.headers.get(k) ?? ''
-    const fft = Number(h('x-trfiq-fft'))
-    const all = new Float32Array(await r.arrayBuffer())
-    return {
-      mode: h('x-trfiq-mode') as PsdData['mode'],
-      fft,
-      segments: Number(h('x-trfiq-segments')),
-      start: Number(h('x-trfiq-start')),
-      count: Number(h('x-trfiq-count')),
-      mean: all.subarray(0, fft),
-      max: all.subarray(fft, 2 * fft),
-      timing: h('server-timing'),
-    }
+    return decodePsd((k) => r.headers.get(k), await r.arrayBuffer())
   },
 }

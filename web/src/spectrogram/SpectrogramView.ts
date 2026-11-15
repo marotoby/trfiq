@@ -9,6 +9,7 @@
 import { colormapLut, type Colormap } from './colormaps'
 import { ticks } from '../format'
 import type { Geometry } from '../geometry'
+import { dbOf, dbPercentiles, type Overview, type Quant } from '../wire'
 
 export interface View {
   /** Visible part of the data in [0, 1] texture space. x = frequency, y = time (0 = start). */
@@ -113,7 +114,7 @@ export class SpectrogramView {
   private data: Uint16Array | null = null
   private w = 0
   private h = 0
-  private quant = { dbMin: -200, dbStep: 0.005 }
+  private quant: Quant = { dbMin: -200, dbStep: 0.005 }
   private db = { lo: -120, hi: 0 }
   private view: View = { ...FULL_VIEW }
   private history: View[] = []
@@ -188,7 +189,8 @@ export class SpectrogramView {
 
   // ---- inputs from the owner --------------------------------------------------------------
 
-  setData(data: Uint16Array, width: number, height: number, quant: { dbMin: number; dbStep: number }) {
+  setData(o: Pick<Overview, 'data' | 'fft' | 'rows' | 'quant'>) {
+    const { data, fft: width, rows: height, quant } = o
     if (width > this.maxTextureSize || height > this.maxTextureSize)
       throw new Error(`${width}×${height} exceeds this GPU's texture limit (${this.maxTextureSize})`)
     const gl = this.gl
@@ -502,7 +504,7 @@ export class SpectrogramView {
     if (this.data && this.w) {
       const ix = Math.min(this.w - 1, Math.max(0, Math.floor(t.x * this.w)))
       const iy = Math.min(this.h - 1, Math.max(0, Math.floor(t.y * this.h)))
-      db = this.quant.dbMin + this.data[iy * this.w + ix] * this.quant.dbStep
+      db = dbOf(this.quant, this.data[iy * this.w + ix])
     }
     this.onCursor({
       freq: this.geo.freqAt(t.x),
@@ -707,14 +709,9 @@ function sameView(a: View, b: View) {
 }
 
 /** Pick a dB window from the data: a low percentile as floor, near-max as ceiling. */
-export function autoDbRange(data: Uint16Array, quant: { dbMin: number; dbStep: number }) {
-  const stride = Math.max(1, Math.floor(data.length / 200_000))
-  const sample: number[] = []
-  for (let i = 0; i < data.length; i += stride) if (data[i] > 0) sample.push(data[i])
-  if (!sample.length) return { lo: -120, hi: 0 }
-  sample.sort((a, b) => a - b)
-  const q = (p: number) => quant.dbMin + sample[Math.min(sample.length - 1, Math.floor(p * sample.length))] * quant.dbStep
-  const lo = Math.floor(q(0.05))
-  const hi = Math.ceil(q(0.9995))
-  return { lo, hi: Math.max(hi, lo + 10) }
+export function autoDbRange(o: Pick<Overview, 'data' | 'quant'>) {
+  const p = dbPercentiles(o, [0.05, 0.9995])
+  if (!p) return { lo: -120, hi: 0 }
+  const lo = Math.floor(p[0])
+  return { lo, hi: Math.max(Math.ceil(p[1]), lo + 10) }
 }

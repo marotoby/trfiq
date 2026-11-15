@@ -266,30 +266,23 @@ function useTimeData(d: TimeData | undefined, geo: Geometry): uPlot.AlignedData 
   if (cache.current?.d === d && cache.current.geo === geo) return cache.current.out
   let t: Float64Array, i: Float32Array, q: Float32Array
   if (d.mode === 'raw') {
-    const n = d.data.length / 2
-    t = Float64Array.from({ length: n }, (_, k) => geo.timeOf(d.start + k))
-    i = new Float32Array(n)
-    q = new Float32Array(n)
-    for (let k = 0; k < n; k++) {
-      i[k] = d.data[2 * k]
-      q[k] = d.data[2 * k + 1]
-    }
+    t = Float64Array.from(d.i, (_, k) => geo.timeOf(d.start + k))
+    ;({ i, q } = d)
   } else {
     // Each bucket becomes two points (min, then max) half a bucket apart: drawn as a line
     // this zig-zags between the extremes and reads as a filled envelope.
-    const b = d.points
+    const b = d.buckets
     t = new Float64Array(2 * b)
     i = new Float32Array(2 * b)
     q = new Float32Array(2 * b)
+    const half = geo.timeOf(d.count / b / 2)
     for (let k = 0; k < b; k++) {
-      const t0 = geo.timeOf(d.start + (k * d.count) / b)
-      const half = geo.timeOf(d.count / b / 2)
-      t[2 * k] = t0
-      t[2 * k + 1] = t0 + half
-      i[2 * k] = d.data[4 * k]
-      i[2 * k + 1] = d.data[4 * k + 1]
-      q[2 * k] = d.data[4 * k + 2]
-      q[2 * k + 1] = d.data[4 * k + 3]
+      t[2 * k] = geo.timeOf(d.start + (k * d.count) / b)
+      t[2 * k + 1] = t[2 * k] + half
+      i[2 * k] = d.iMin[k]
+      i[2 * k + 1] = d.iMax[k]
+      q[2 * k] = d.qMin[k]
+      q[2 * k + 1] = d.qMax[k]
     }
   }
   const out: uPlot.AlignedData = [t as unknown as number[], i as unknown as number[], q as unknown as number[]]
