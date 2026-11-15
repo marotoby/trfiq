@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
@@ -13,7 +13,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { api, type Recording, type SourceInfo, type Status } from '../api'
 import { labelColor } from '../annotations'
 import * as fmt from '../format'
-import type { ListSearch } from '../router'
+import type { ListSearch, ListView } from '../router'
+import { Thumbnail, hasPreview } from '../spectrogram/Thumbnail'
 import { Icon, IconButton, Segmented } from '../ui'
 
 const features = tableFeatures({
@@ -81,6 +82,21 @@ const columns = col.columns([
   }),
 ])
 
+const VIEW_KEY = 'trfiq.listView'
+
+function loadView(): ListView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'gallery' ? 'gallery' : 'table'
+  } catch {
+    return 'table'
+  }
+}
+
+function splitStem(stem: string) {
+  const i = stem.lastIndexOf('/')
+  return { folder: stem.slice(0, i + 1), name: stem.slice(i + 1) }
+}
+
 const GRID = 'minmax(240px, 3fr) 90px 150px 84px 96px 116px 84px 80px minmax(160px, 2fr)'
 const EMPTY: Recording[] = []
 
@@ -97,11 +113,22 @@ export function RecordingList() {
     return () => clearTimeout(t)
   }, [text, search.q, navigate])
 
+  // The view mode is UI only: keep it out of the API query (and its cache key).
+  const params = { q: search.q, source: search.source, status: search.status }
   const recordings = useQuery({
-    queryKey: ['recordings', search],
-    queryFn: ({ signal }) => api.recordings(search, signal),
+    queryKey: ['recordings', params],
+    queryFn: ({ signal }) => api.recordings(params, signal),
     placeholderData: keepPreviousData,
   })
+  const view = search.view ?? loadView()
+  const setView = (v: ListView) => {
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      /* private mode etc. */
+    }
+    navigate({ search: (s) => ({ ...s, view: v }), replace: true })
+  }
 
   return (
     <main className="list-page">
@@ -144,9 +171,22 @@ export function RecordingList() {
             { value: 'broken', label: 'Broken' },
           ]}
         />
+        <div className="view-switch">
+          <Segmented
+            ariaLabel="View"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'table', label: <><Icon name="list" /> Table</>, title: 'Table: hover a recording to preview its waterfall' },
+              { value: 'gallery', label: <><Icon name="grid" /> Gallery</>, title: 'Gallery: waterfall thumbnails' },
+            ]}
+          />
+        </div>
       </div>
       {recordings.error ? (
         <div className="error">Failed to load recordings: {String(recordings.error.message)}</div>
+      ) : view === 'gallery' ? (
+        <Gallery data={recordings.data ?? EMPTY} />
       ) : (
         <RecordingTable data={recordings.data ?? EMPTY} />
       )}
@@ -166,6 +206,30 @@ function RecordingTable({ data }: { data: Recording[] }) {
     overscan: 20,
   })
 
+  // Hover preview: shown after a short pause on a row, follows the pointer.
+  const [preview, setPreview] = useState<Recording | null>(null)
+  const pointer = useRef({ x: 0, y: 0 })
+  const popRef = useRef<HTMLDivElement>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const place = () => {
+    const el = popRef.current
+    if (!el) return
+    const { x, y } = pointer.current
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const left = x + 18 + w > innerWidth - 8 ? x - 18 - w : x + 18
+    const top = Math.max(8, Math.min(y + 16, innerHeight - h - 8))
+    el.style.transform = `translate(${left}px, ${top}px)`
+  }
+  useLayoutEffect(place, [preview])
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const hover = (r: Recording | null, e?: MouseEvent) => {
+    clearTimeout(timer.current)
+    if (e) pointer.current = { x: e.clientX, y: e.clientY }
+    if (!r || !hasPreview(r)) return setPreview(null)
+    timer.current = setTimeout(() => setPreview(r), 300)
+  }
+
   return (
     <div className="table card">
       <div className="thead" style={{ gridTemplateColumns: GRID }}>
@@ -179,7 +243,7 @@ function RecordingTable({ data }: { data: Recording[] }) {
           )
         })}
       </div>
-      <div className="tbody" ref={scrollRef}>
+      <div className="tbody" ref={scrollRef} onScroll={() => hover(null)}>
         {rows.length === 0 && (
           <div className="empty-state">
             <Icon name="search" size={28} />
@@ -197,6 +261,12 @@ function RecordingTable({ data }: { data: Recording[] }) {
                 search={{}}
                 className={`tr row-${row.original.status}`}
                 style={{ gridTemplateColumns: GRID, transform: `translateY(${item.start}px)` }}
+                onMouseEnter={(e) => hover(row.original, e)}
+                onMouseMove={(e) => {
+                  pointer.current = { x: e.clientX, y: e.clientY }
+                  place()
+                }}
+                onMouseLeave={() => hover(null)}
               >
                 {row.getAllCells().map((cell) => (
                   <span key={cell.id} className="td">
@@ -208,7 +278,138 @@ function RecordingTable({ data }: { data: Recording[] }) {
           })}
         </div>
       </div>
+      {preview && <PreviewPopover r={preview} popRef={popRef} />}
     </div>
+  )
+}
+
+function PreviewPopover({ r, popRef }: { r: Recording; popRef: RefObject<HTMLDivElement | null> }) {
+  const sr = r.sample_rate
+  const cf = r.center_freq
+  return (
+    <div className="preview-pop" ref={popRef} role="tooltip">
+      <div className="preview-head">
+        <strong>{splitStem(r.stem).name}</strong>
+        <span className="muted">{fmt.seconds(fmt.duration(r))}</span>
+      </div>
+      <div className="preview-plot">
+        <Thumbnail r={r} />
+        <span className="preview-t0">0 s</span>
+        <span className="preview-t1">{fmt.seconds(fmt.duration(r))}</span>
+      </div>
+      <div className="preview-axis">
+        {sr && cf != null ? (
+          <>
+            <span>{fmt.hz(cf - sr / 2)}</span>
+            <span>{fmt.hz(cf)}</span>
+            <span>{fmt.hz(cf + sr / 2)}</span>
+          </>
+        ) : (
+          <span className="muted">Frequency axis needs sample rate and center frequency</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---- gallery -------------------------------------------------------------------------------
+
+const CARD_MIN = 250
+const CARD_H = 232
+const GAP = 14
+
+function Gallery({ data }: { data: Recording[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = scrollRef.current!
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth))
+    ro.observe(el)
+    setWidth(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+  const cols = Math.max(1, Math.floor((width + GAP) / (CARD_MIN + GAP)))
+  const virtualizer = useVirtualizer({
+    count: Math.ceil(data.length / cols),
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CARD_H + GAP,
+    overscan: 3,
+  })
+
+  return (
+    <div className="gallery" ref={scrollRef}>
+      {data.length === 0 && (
+        <div className="empty-state">
+          <Icon name="search" size={28} />
+          <p>No recordings match.</p>
+        </div>
+      )}
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((row) => (
+          <div
+            key={row.key}
+            className="gallery-row"
+            style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: GAP, height: CARD_H, transform: `translateY(${row.start}px)` }}
+          >
+            {data.slice(row.index * cols, row.index * cols + cols).map((r) => (
+              <GalleryCard key={r.id} r={r} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function GalleryCard({ r }: { r: Recording }) {
+  const { folder, name } = splitStem(r.stem)
+  const meta = [fmt.hz(r.center_freq), fmt.sps(r.sample_rate), fmt.seconds(fmt.duration(r)), fmt.bytes(r.size)]
+  return (
+    <Link to="/r/$id" params={{ id: String(r.id) }} search={{}} className={`gcard row-${r.status}`} title={r.stem}>
+      <div className="gcard-thumb">
+        {hasPreview(r) ? (
+          <Thumbnail r={r} />
+        ) : (
+          <div className="thumb-empty">
+            <Icon name="file" size={22} />
+            <span className={`status status-${r.status}`}>
+              <span className="dot" />
+              {STATUS_TEXT[r.status]}
+            </span>
+            {r.error && <small>{r.error}</small>}
+          </div>
+        )}
+        <span className="pill gcard-source">{r.source}</span>
+        {r.annotation_count > 0 && (
+          <span className="gcard-count" title={`${r.annotation_count} annotations`}>
+            <Icon name="tag" size={12} /> {r.annotation_count}
+          </span>
+        )}
+      </div>
+      <div className="gcard-body">
+        <div className="gcard-name">
+          {folder && <span className="muted">{folder}</span>}
+          <span className="name-main">{name}</span>
+        </div>
+        <div className="gcard-meta">
+          {r.status === 'ok' ? (
+            meta.filter((m) => m !== '—').join(' · ')
+          ) : (
+            <span className={`status status-${r.status}`}>
+              <span className="dot" />
+              {STATUS_TEXT[r.status]}
+              {r.datatype && <span className="mono muted"> · {r.datatype}</span>}
+            </span>
+          )}
+        </div>
+        <span className="tags">
+          {r.labels.slice(0, 4).map((l) => (
+            <span key={l} className="tag" style={{ '--c': labelColor(l) } as CSSProperties}>{l}</span>
+          ))}
+          {r.labels.length > 4 && <span className="muted">+{r.labels.length - 4}</span>}
+        </span>
+      </div>
+    </Link>
   )
 }
 

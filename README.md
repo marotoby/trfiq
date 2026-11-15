@@ -53,6 +53,7 @@ responsive even on 100 GB files.
 |---|---|
 | **Sources** | Any number of S3-compatible buckets (MinIO, AWS, RustFS, …) and local folders, side by side |
 | **Formats** | SigMF pairs in every datatype (`cf64 cf32 ci32 ci16 ci8 cu32 cu16 cu8`, real variants, LE/BE); raw `.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` with the datatype guessed from the extension |
+| **Browse** | Table view with a waterfall preview when you hover a recording, or a gallery of waterfall thumbnails; thumbnails load only when scrolled into view |
 | **Index & search** | Full-text search over names, descriptions, hardware and annotation labels; filter by status, datatype, frequency band and capture date |
 | **Spectrogram** | FFT 256 to 16384, Hann / Blackman-Harris / rectangular windows, turbo / viridis / gray colormaps, max-hold downsampling so short bursts never vanish when zoomed out |
 | **Spectrum & time plots** | For whatever time range is on screen: power spectrum (mean + max hold) and I/Q over time. Raw samples when zoomed in, a min/max envelope when zoomed out, so peaks never disappear |
@@ -62,8 +63,8 @@ responsive even on 100 GB files.
 | **Operations** | One 44 MB distroless non-root image, `/healthz` and `/readyz`, JSON logs, per-source scan status in the UI |
 
 <p align="center">
-  <img src="docs/images/screenshot-recordings.jpg" alt="Recording list with source status and search" width="49%">
-  <img src="docs/images/screenshot-box-zoom.jpg" alt="Box zoom with live delta-f and delta-t" width="49%">
+  <img src="docs/images/screenshot-recordings.jpg" alt="Table view with a waterfall preview on hover" width="49%">
+  <img src="docs/images/screenshot-gallery.jpg" alt="Gallery view with waterfall thumbnails" width="49%">
 </p>
 
 ## Quick start
@@ -135,6 +136,10 @@ sources:
 | **Broken** | Half of a SigMF pair is missing, or the metadata doesn't parse (the UI says which) |
 
 ## Using the viewer
+
+<p align="center">
+  <img src="docs/images/screenshot-box-zoom.jpg" alt="Box zoom with live delta-f and delta-t" width="70%">
+</p>
 
 | Action | Mouse | Keyboard |
 |---|---|---|

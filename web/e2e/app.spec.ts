@@ -189,3 +189,29 @@ test('spectrum and time plots follow the visible window', async ({ page }) => {
   await expect(time).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('table rows preview their waterfall on hover; gallery shows thumbnails', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?q=chirps')
+  await page.locator('.tr', { hasText: 'chirps' }).first().hover()
+  const pop = page.locator('.preview-pop')
+  await expect(pop.locator('.thumb-ready')).toBeVisible()
+  expect(await distinctColours(page, '.preview-pop canvas')).toBeGreaterThan(20)
+  await page.mouse.move(5, 5)
+  await expect(pop).toHaveCount(0)
+
+  // Gallery: one card per match, each with a drawn thumbnail.
+  await page.getByRole('radio', { name: /Gallery/ }).click()
+  await expect(page).toHaveURL(/view=gallery/)
+  const cards = page.locator('.gcard')
+  await expect(cards).toHaveCount(await page.locator('.source').count())
+  await expect(cards.locator('.thumb-ready')).toHaveCount(await cards.count())
+
+  // The choice is remembered without the URL parameter; broken files get a placeholder.
+  await page.goto('/?status=broken')
+  await expect(page.locator('.gcard .thumb-empty').first()).toContainText('missing .sigmf-meta')
+  await page.goto('/?q=chirps')
+  await page.locator('.gcard').first().click()
+  await expect(page).toHaveURL(/\/r\/\d+/)
+  expect(errors).toEqual([])
+})

@@ -32,7 +32,11 @@ export interface ListSearch {
   q?: string
   source?: string
   status?: Status
+  /** Table or gallery; when absent the last choice (localStorage) is used. */
+  view?: ListView
 }
+
+export type ListView = 'table' | 'gallery'
 
 const listRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -41,6 +45,7 @@ const listRoute = createRoute({
     q: str(s.q),
     source: str(s.source),
     status: oneOf(s.status, ['ok', 'needs_meta', 'broken'] as const),
+    view: oneOf(s.view, ['table', 'gallery'] as const),
   }),
   component: RecordingList,
 })
