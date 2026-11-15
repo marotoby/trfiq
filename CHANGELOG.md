@@ -1,3 +1,19 @@
+## v0.3.0 (2026-11-15)
+
+### Feat
+
+- full-resolution tiles when zoomed in on time
+
+### Fix
+
+- **index**: decide once whether a recording can be drawn
+- **wiki**: commit wiki syncs with the main repo's git identity
+
+### Refactor
+
+- **web**: one view model for the spectrogram's visible region
+- own each response layout in one wire module per side
+
 ## v0.2.1 (2026-11-15)
 
 ### Fix
