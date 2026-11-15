@@ -17,7 +17,7 @@ raw samples and stays responsive even on 100 GB files.
 | Point it at my MinIO / S3 bucket | [Configuration](Configuration.md) |
 | Run it for my team | [Deployment](Deployment.md) |
 | Know which files show up, and why one is "Broken" | [Recordings and formats](Recordings-and-Formats.md) |
-| Find my way around the list | [Browsing recordings](Browsing-Recordings.md) |
+| Find my way around: table, gallery, folders | [Browsing recordings](Browsing-Recordings.md) |
 | Learn the viewer, its plots and shortcuts | [Using the viewer](Using-the-Viewer.md) |
 | Script against it | [HTTP API](HTTP-API.md) |
 | Understand how it works inside | [Architecture](Architecture.md) |

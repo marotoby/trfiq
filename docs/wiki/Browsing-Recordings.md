@@ -46,7 +46,26 @@ coloured from the noise floor up so signals stand out.
 > Very short, sparse bursts can fall between slices and not show up. The max-hold pyramid on
 > the roadmap fixes this.
 
+## Folders view
+
+A file-explorer view of your sources:
+
+- **Left:** a tree with *All sources* at the top, then each source, then the folders inside it.
+  Every entry shows how many recordings it holds, subfolders included. Click a name to open it;
+  click the arrow to expand or collapse it.
+- **Right:** a breadcrumb (click any part to go back up), cards for the subfolders, and a table
+  of the recordings directly in the open folder. The table works like the Table view, hover
+  preview included.
+
+Search and the status filter apply here too, so the tree shows only folders that contain
+matches. Searching `lora` shows where your LoRa recordings live. The open folder is in the URL
+(`?view=folders&dir=lab/captures/2026`), so you can bookmark it and the browser's Back button
+goes back up.
+
+Folders come from the recordings' paths in the bucket (S3 has no real folders). A folder with
+no recordings in it or below it doesn't appear.
+
 ## Remembered choices
 
-Your last table/gallery choice is remembered in the browser. A `?view=table` or
-`?view=gallery` in the URL takes precedence.
+Your last view (table, gallery or folders) is remembered in the browser. A `?view=…` in the URL
+takes precedence.

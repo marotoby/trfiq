@@ -34,9 +34,11 @@ export interface ListSearch {
   status?: Status
   /** Table or gallery; when absent the last choice (localStorage) is used. */
   view?: ListView
+  /** Folders view: selected folder, `source` or `source/a/b`. */
+  dir?: string
 }
 
-export type ListView = 'table' | 'gallery'
+export type ListView = 'table' | 'gallery' | 'folders'
 
 const listRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -45,7 +47,8 @@ const listRoute = createRoute({
     q: str(s.q),
     source: str(s.source),
     status: oneOf(s.status, ['ok', 'needs_meta', 'broken'] as const),
-    view: oneOf(s.view, ['table', 'gallery'] as const),
+    view: oneOf(s.view, ['table', 'gallery', 'folders'] as const),
+    dir: str(s.dir),
   }),
   component: RecordingList,
 })
@@ -76,6 +79,7 @@ const viewerRoute = createRoute({
 })
 
 export const router = createRouter({
+  basepath: import.meta.env.BASE_URL,
   routeTree: rootRoute.addChildren([listRoute, viewerRoute]),
   defaultPreload: 'intent',
 })

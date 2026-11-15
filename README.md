@@ -55,7 +55,7 @@ responsive even on 100 GB files.
 |---|---|
 | **Sources** | Any number of S3-compatible buckets (MinIO, AWS, RustFS, …) and local folders, side by side |
 | **Formats** | SigMF pairs in every datatype (`cf64 cf32 ci32 ci16 ci8 cu32 cu16 cu8`, real variants, LE/BE); raw `.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` with the datatype guessed from the extension |
-| **Browse** | Table view with a waterfall preview when you hover a recording, or a gallery of waterfall thumbnails; thumbnails load only when scrolled into view |
+| **Browse** | Table view with a waterfall preview when you hover a recording, a gallery of waterfall thumbnails, or a folders view (source and directory tree with counts) |
 | **Index & search** | Full-text search over names, descriptions, hardware and annotation labels; filter by status, datatype, frequency band and capture date |
 | **Spectrogram** | FFT 256 to 16384, Hann / Blackman-Harris / rectangular windows, turbo / viridis / gray colormaps, max-hold downsampling so short bursts never vanish when zoomed out |
 | **Spectrum & time plots** | For whatever time range is on screen: power spectrum (mean + max hold) and I/Q over time. Raw samples when zoomed in, a min/max envelope when zoomed out, so peaks never disappear |
@@ -107,6 +107,10 @@ docker run -d --name trfiq -p 8080:8080 \
 
 Read-only credentials are enough (`s3:ListBucket`, `s3:GetObject`). The volume holds only the index
 and caches; delete it any time and it's rebuilt by rescanning.
+
+For a reverse proxy subpath, build with `--build-arg TRFIQ_BASE_PATH=/trfiq/` and strip
+`/trfiq` at the proxy. The browser router and built assets use that base path; API calls
+still use the host's root `/api/`, which must also route to T-RF/IQ.
 
 For several buckets, endpoints or local folders, mount your own config at `/etc/trfiq/config.yaml`:
 
@@ -267,7 +271,7 @@ uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/pack
 - [x] Box zoom, zoom history, keyboard navigation, deep links
 - [x] SigMF annotation overlay and panel; annotations on the time plot
 - [x] Spectrum (mean + max hold) and time-domain I/Q of the visible window
-- [x] Table and gallery views with waterfall previews
+- [x] Table, gallery and folders views with waterfall previews
 - [x] Distroless image, compose demo stack, numpy golden tests, Playwright e2e, CI
 - [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading
 - [ ] Background max-hold pyramid and an LRU disk tile cache

@@ -215,3 +215,28 @@ test('table rows preview their waterfall on hover; gallery shows thumbnails', as
   await expect(page).toHaveURL(/\/r\/\d+/)
   expect(errors).toEqual([])
 })
+
+test('folders view browses sources and directories', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?view=folders')
+  await expect(page.locator('.source')).not.toHaveCount(0)
+  const sources = await page.locator('.source').count()
+  // Top level: one card per source, and the tree lists every source.
+  await expect(page.locator('.subfolder')).toHaveCount(sources)
+  await expect(page.locator('.crumb').first()).toContainText('All sources')
+
+  // Open a source, then its demo folder: the table lists only what's directly in it.
+  await page.locator('.subfolder').first().click()
+  await page.locator('.subfolder', { hasText: 'demo' }).click()
+  await expect(page).toHaveURL(/dir=[^&]+%2Fdemo/)
+  await expect(page.locator('.tr')).toHaveCount(4)
+  await expect(page.locator('.tree-row.selected')).toContainText('demo')
+  await expect(page.locator('.crumb')).toHaveCount(3)
+
+  // Search narrows the tree to folders with matches; Back returns to the parent.
+  await page.locator('.search').fill('chirp')
+  await expect(page.locator('.tr')).toHaveCount(1)
+  await page.goBack()
+  await expect(page.locator('.crumb')).toHaveCount(2)
+  expect(errors).toEqual([])
+})

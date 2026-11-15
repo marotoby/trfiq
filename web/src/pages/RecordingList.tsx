@@ -15,6 +15,7 @@ import { labelColor } from '../annotations'
 import * as fmt from '../format'
 import type { ListSearch, ListView } from '../router'
 import { Thumbnail, hasPreview } from '../spectrogram/Thumbnail'
+import { FolderView } from './FolderView'
 import { Icon, IconButton, Segmented } from '../ui'
 
 const features = tableFeatures({
@@ -86,7 +87,8 @@ const VIEW_KEY = 'trfiq.listView'
 
 function loadView(): ListView {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'gallery' ? 'gallery' : 'table'
+    const v = localStorage.getItem(VIEW_KEY)
+    return v === 'gallery' || v === 'folders' ? v : 'table'
   } catch {
     return 'table'
   }
@@ -179,6 +181,7 @@ export function RecordingList() {
             options={[
               { value: 'table', label: <><Icon name="list" /> Table</>, title: 'Table: hover a recording to preview its waterfall' },
               { value: 'gallery', label: <><Icon name="grid" /> Gallery</>, title: 'Gallery: waterfall thumbnails' },
+              { value: 'folders', label: <><Icon name="folder" /> Folders</>, title: 'Folders: browse by source and directory' },
             ]}
           />
         </div>
@@ -187,6 +190,13 @@ export function RecordingList() {
         <div className="error">Failed to load recordings: {String(recordings.error.message)}</div>
       ) : view === 'gallery' ? (
         <Gallery data={recordings.data ?? EMPTY} />
+      ) : view === 'folders' ? (
+        <FolderView
+          data={recordings.data ?? EMPTY}
+          dir={search.dir}
+          onDir={(dir) => navigate({ search: (s) => ({ ...s, dir }) })}
+          renderFiles={(files, emptyText) => <RecordingTable data={files} emptyText={emptyText} />}
+        />
       ) : (
         <RecordingTable data={recordings.data ?? EMPTY} />
       )}
@@ -194,7 +204,7 @@ export function RecordingList() {
   )
 }
 
-function RecordingTable({ data }: { data: Recording[] }) {
+function RecordingTable({ data, emptyText = 'No recordings match.' }: { data: Recording[]; emptyText?: string }) {
   const table = useTable({ features, columns, data })
   const rows = table.getRowModel().rows
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -247,7 +257,7 @@ function RecordingTable({ data }: { data: Recording[] }) {
         {rows.length === 0 && (
           <div className="empty-state">
             <Icon name="search" size={28} />
-            <p>No recordings match.</p>
+            <p>{emptyText}</p>
           </div>
         )}
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
