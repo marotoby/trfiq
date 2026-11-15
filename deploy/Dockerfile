@@ -6,7 +6,8 @@ WORKDIR /web
 COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY web/ ./
-RUN bun run build
+ARG TRFIQ_BASE_PATH=/
+RUN bun run build --base=${TRFIQ_BASE_PATH}
 
 # ---- backend (frontend embedded via rust-embed) ----
 FROM docker.io/library/rust:1.100-bookworm AS build

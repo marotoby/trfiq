@@ -122,6 +122,9 @@ async function check(r: Response): Promise<Response> {
   throw new ApiError(r.status, msg)
 }
 
+/** Where the UI is served from (vite `--base`), without the trailing slash; the API sits beside it. */
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+
 async function json<T>(url: string, signal?: AbortSignal): Promise<T> {
   return (await check(await fetch(url, { signal }))).json()
 }
@@ -134,24 +137,24 @@ function qs(params: Record<string, string | number | undefined>): string {
 }
 
 export const api = {
-  sources: (signal?: AbortSignal) => json<SourceInfo[]>('/api/sources', signal),
+  sources: (signal?: AbortSignal) => json<SourceInfo[]>(`${BASE}/api/sources`, signal),
 
   rescan: async (id: string) => {
-    await check(await fetch(`/api/sources/${encodeURIComponent(id)}/rescan`, { method: 'POST' }))
+    await check(await fetch(`${BASE}/api/sources/${encodeURIComponent(id)}/rescan`, { method: 'POST' }))
   },
 
   recordings: (p: ListParams, signal?: AbortSignal) =>
-    json<Recording[]>(`/api/recordings${qs({ ...p })}`, signal),
+    json<Recording[]>(`${BASE}/api/recordings${qs({ ...p })}`, signal),
 
   recording: (id: number, signal?: AbortSignal) =>
-    json<RecordingDetail>(`/api/recordings/${id}`, signal),
+    json<RecordingDetail>(`${BASE}/api/recordings/${id}`, signal),
 
   overview: async (
     id: number,
     p: { fft: number; rows: number; window: WindowFn },
     signal?: AbortSignal,
   ): Promise<Overview> => {
-    const r = await check(await fetch(`/api/recordings/${id}/overview${qs(p)}`, { signal }))
+    const r = await check(await fetch(`${BASE}/api/recordings/${id}/overview${qs(p)}`, { signal }))
     const h = (k: string) => r.headers.get(k) ?? ''
     const buf = await r.arrayBuffer()
     return {
@@ -167,7 +170,7 @@ export const api = {
   },
 
   time: async (id: number, p: WindowParams & { points: number }, signal?: AbortSignal): Promise<TimeData> => {
-    const r = await check(await fetch(`/api/recordings/${id}/time${qs({ ...p })}`, { signal }))
+    const r = await check(await fetch(`${BASE}/api/recordings/${id}/time${qs({ ...p })}`, { signal }))
     const h = (k: string) => r.headers.get(k) ?? ''
     return {
       mode: h('x-trfiq-mode') as TimeData['mode'],
@@ -184,7 +187,7 @@ export const api = {
     p: WindowParams & { fft: number; window: WindowFn },
     signal?: AbortSignal,
   ): Promise<PsdData> => {
-    const r = await check(await fetch(`/api/recordings/${id}/psd${qs({ ...p })}`, { signal }))
+    const r = await check(await fetch(`${BASE}/api/recordings/${id}/psd${qs({ ...p })}`, { signal }))
     const h = (k: string) => r.headers.get(k) ?? ''
     const fft = Number(h('x-trfiq-fft'))
     const all = new Float32Array(await r.arrayBuffer())

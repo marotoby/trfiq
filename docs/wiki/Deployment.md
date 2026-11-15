@@ -12,6 +12,16 @@ docker build -f deploy/Dockerfile -t trfiq:0.2.1 .
 The build has three stages: bun builds the UI, Rust compiles the server with the UI embedded,
 and the result is copied onto `gcr.io/distroless/cc-debian12:nonroot`.
 
+To serve it under a sub-path behind a reverse proxy (for example `https://lab.example/trfiq/`),
+build the UI for that path:
+
+```sh
+docker build -f deploy/Dockerfile --build-arg TRFIQ_BASE_PATH=/trfiq/ -t trfiq:0.2.1 .
+```
+
+The proxy must strip the prefix before forwarding, since the server itself always serves from
+`/` (`/trfiq/api/…` → `/api/…`). The published image is built for `/`.
+
 ## Run
 
 ```sh
