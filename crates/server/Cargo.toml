@@ -1,0 +1,35 @@
+[package]
+name = "trfiq-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "trfiq"
+path = "src/main.rs"
+
+[dependencies]
+trfiq-dsp.workspace = true
+trfiq-index.workspace = true
+trfiq-storage.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+futures.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+axum = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
+mime_guess = "2"
+rust-embed = "8"
+serde_yaml = "0.9"
+tower-http = { version = "0.6", features = ["compression-gzip", "compression-zstd", "trace"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
