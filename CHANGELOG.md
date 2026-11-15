@@ -1,3 +1,15 @@
+## v0.2.1 (2026-11-15)
+
+### Fix
+
+- **web**: place spectrogram columns at their bin centres and use honest units
+- **server**: centre each overview row in its time slot
+
+### Refactor
+
+- **web**: one recording geometry for every axis and conversion
+- **server**: read sample windows through one SampleReader
+
 ## v0.2.0 (2026-11-15)
 
 ### Feat
