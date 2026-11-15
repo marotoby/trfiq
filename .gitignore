@@ -1,0 +1,7 @@
+target/
+web/node_modules/
+web/dist/
+/data/
+*.sqlite*
+web/test-results/
+web/playwright-report/
