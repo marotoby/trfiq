@@ -469,7 +469,7 @@ function AnnotationPanel(props: {
                   <span className="ann-label">{a.label}</span>
                   <span className="ann-meta">
                     {geo.formatTime(geo.timeOf(a.start))} · {geo.formatTime(geo.timeOf(a.count))}
-                    {a.fLo != null && a.fHi != null && <> · {geo.formatFreq(a.fHi - a.fLo, 4)} wide</>}
+                    {a.fLo != null && a.fHi != null && geo.calibrated && <> · {geo.formatFreq(a.fHi - a.fLo, 4)} wide</>}
                   </span>
                   {a.comment && <span className="ann-comment">{a.comment}</span>}
                 </button>

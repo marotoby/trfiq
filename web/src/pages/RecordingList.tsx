@@ -309,15 +309,9 @@ function PreviewPopover({ r, popRef }: { r: Recording; popRef: RefObject<HTMLDiv
         <span className="preview-t1">{end}</span>
       </div>
       <div className="preview-axis">
-        {r.sample_rate && r.center_freq != null ? (
-          <>
-            {[0, 0.5, 1].map((x) => (
-              <span key={x}>{g.formatFreq(g.freqAt(x))}</span>
-            ))}
-          </>
-        ) : (
-          <span className="muted">Frequency axis needs sample rate and center frequency</span>
-        )}
+        {[0, 0.5, 1].map((x) => (
+          <span key={x}>{g.formatFreq(g.freqAt(x))}</span>
+        ))}
       </div>
     </div>
   )

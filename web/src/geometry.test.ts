@@ -15,6 +15,16 @@ describe('geometry', () => {
     expect(g.freqAt(1) - g.freqAt(0)).toBeCloseTo(rec.sample_rate, 3)
   })
 
+  test('each texel centre is at its bin frequency', () => {
+    for (const k of [0, 1, 511, 512, 513, 1023]) {
+      expect(g.freqAt((k + 0.5) / 1024)).toBeCloseTo(g.binFreq(k), 3)
+    }
+    // So the band edges sit half a bin below cf ± sr/2.
+    const half = rec.sample_rate / 1024 / 2
+    expect(g.freqAt(0)).toBeCloseTo(rec.center_freq - rec.sample_rate / 2 - half, 3)
+    expect(g.freqAt(1)).toBeCloseTo(rec.center_freq + rec.sample_rate / 2 - half, 3)
+  })
+
   test('bins are one bin width apart, DC bin at the centre frequency', () => {
     expect(g.binFreq(512)).toBe(rec.center_freq)
     expect(g.binFreq(513) - g.binFreq(512)).toBeCloseTo(rec.sample_rate / 1024, 6)
@@ -41,6 +51,33 @@ describe('geometry', () => {
   })
 })
 
+describe('units', () => {
+  test('Hz and seconds with a sample rate', () => {
+    const g = geometry(rec, 1024)
+    expect(g.calibrated).toBe(true)
+    expect(g.formatFreq(433.92e6, 6)).toBe('433.92 MHz')
+    expect(g.formatTime(g.duration)).toBe('2 s')
+  })
+
+  test('cycles/sample and samples without one', () => {
+    const g = geometry({ center_freq: 433.92e6, sample_rate: null, num_samples: 1_500_000 }, 8)
+    expect(g.calibrated).toBe(false)
+    expect(g.binFreq(0)).toBe(-0.5)
+    expect(g.binFreq(4)).toBe(0)
+    expect(g.formatFreq(g.binFreq(6))).toBe('0.25 cyc/sample')
+    expect(g.formatFreq(1e-17)).toBe('0 cyc/sample')
+    expect(g.duration).toBe(1_500_000)
+    expect(g.formatTime(g.duration)).toBe('1.5M samples')
+    expect(g.formatTime(512)).toBe('512 samples')
+  })
+
+  test('frequencies relative to the band centre without a centre frequency', () => {
+    const g = geometry({ center_freq: null, sample_rate: 1e6, num_samples: 1000 }, 1024)
+    expect(g.binFreq(512)).toBe(0)
+    expect(g.formatFreq(g.binFreq(768))).toBe('250 kHz')
+  })
+})
+
 describe('annotations on the spectrogram', () => {
   const g = geometry(rec, 1024)
   const ann = (fLo: number | null, fHi: number | null): Annotation => ({
@@ -58,5 +95,12 @@ describe('annotations on the spectrogram', () => {
   test('without frequency edges span the whole band', () => {
     const p = toPlot(ann(null, null), g)
     expect([p.x0, p.x1]).toEqual([0, 1])
+  })
+
+  test('without a sample rate span the whole band, since their Hz edges cannot be placed', () => {
+    const u = geometry({ ...rec, sample_rate: null }, 1024)
+    const p = toPlot(ann(433.42e6, 434.42e6), u)
+    expect([p.x0, p.x1]).toEqual([0, 1])
+    expect(p.y0).toBe(0.25)
   })
 })

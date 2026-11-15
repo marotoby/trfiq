@@ -236,7 +236,7 @@ export function TimePlot(p: {
       info={
         d && (
           <>
-            {d.count.toLocaleString()} samples · {geo.formatTime(geo.timeOf(d.count))}
+            {d.count.toLocaleString()} samples{geo.calibrated && <> · {geo.formatTime(geo.timeOf(d.count))}</>}
             {d.mode !== 'raw' && (
               <span
                 className="badge"

@@ -15,6 +15,21 @@ function si(v: number, unit: string, digits = 3): string {
 export const hz = (v: number | null | undefined, digits = 6) => (v == null ? '—' : si(v, 'Hz', digits))
 export const sps = (v: number | null | undefined) => (v == null ? '—' : si(v, 'S/s', 4))
 
+/** A sample count or index, e.g. `512 samples`, `1.5M samples`. */
+export function samples(v: number | null | undefined): string {
+  if (v == null || !isFinite(v)) return '—'
+  for (const [scale, prefix] of SI) {
+    if (Math.abs(v) >= scale) return `${+(v / scale).toPrecision(4)}${prefix} samples`
+  }
+  return `${+v.toPrecision(4)} samples`
+}
+
+/** A normalised frequency in cycles per sample (−0.5 to 0.5 across the band). */
+export function cycles(v: number | null | undefined, digits = 4): string {
+  if (v == null || !isFinite(v)) return '—'
+  return `${Math.abs(v) < 1e-12 ? 0 : +v.toPrecision(Math.min(digits, 5))} cyc/sample`
+}
+
 export function bytes(v: number | null | undefined): string {
   if (v == null) return '—'
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']

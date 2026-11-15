@@ -47,8 +47,8 @@ export function parseAnnotations(meta: unknown): Annotation[] {
 }
 
 export function toPlot(a: Annotation, g: Geometry): PlotAnnotation {
-  // Missing frequency edges mean "the whole band".
-  const x = (f: number | null, dflt: number) => (f == null ? dflt : g.xAt(f))
+  // Missing frequency edges mean "the whole band"; so do Hz edges without a sample rate.
+  const x = (f: number | null, dflt: number) => (f == null || !g.calibrated ? dflt : g.xAt(f))
   return {
     id: a.id,
     label: a.label,

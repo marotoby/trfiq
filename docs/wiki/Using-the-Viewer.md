@@ -11,9 +11,10 @@ The viewer has four parts:
 
 ## Spectrogram
 
-When a recording opens, the server computes about 1,024 FFTs spread evenly over the whole
-file. This "strided overview" is why even a 100 GB file opens in well under a second. The
-status bar shows its size and how long the read and the FFTs took.
+When a recording opens, the server splits the file into about 1,024 equal slices and computes
+one FFT from the middle of each. Each row of the picture is one slice. This "strided overview"
+is why even a 100 GB file opens in well under a second. The status bar shows its size and how
+long the read and the compute took.
 
 When zoomed out, each pixel shows the **maximum** of the data it covers (max-hold), so short
 bursts don't vanish between pixels.
@@ -41,6 +42,19 @@ bursts don't vanish between pixels.
 Keyboard shortcuts work when the spectrogram has focus (click it once). While dragging a box,
 a pill shows its Δf and Δt. Hovering shows frequency, time, power and the annotation under the
 cursor in the status bar.
+
+### Axes and units
+
+Each column is one FFT bin, and the frequency shown for a column is the frequency of its bin's
+centre, the same values the Spectrum panel plots. (With an even FFT size, DC is the bin just
+right of the middle, so the band runs from half a bin below `centre − rate/2` to half a bin
+below `centre + rate/2`.)
+
+Without a sample rate in the metadata (raw files, for example) there are no Hz or seconds to
+show, so frequencies are in **cycles per sample** (−0.5 to 0.5) and times are in **samples**,
+in the spectrogram, the panels, the annotation list and the hover preview. Annotation frequency
+edges can't be placed without a sample rate, so annotations then cover the whole band. Without
+a centre frequency, frequencies are relative to the band centre (0 Hz).
 
 ### Display settings
 

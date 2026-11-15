@@ -85,8 +85,9 @@ the FFT size or window.
 | `.bin .iq .raw .dat` | not guessed |
 
 A raw file has no sample rate or centre frequency, so even when it can be drawn its axes are
-placeholders. Entering metadata for raw files in the UI is on the roadmap. Until then, the
-fix is to write a `.sigmf-meta` next to the data, renaming the data to `.sigmf-data`:
+in cycles per sample and samples (see [Axes and units](Using-the-Viewer.md#axes-and-units)).
+Entering metadata for raw files in the UI is on the roadmap. Until then, the fix is to write a
+`.sigmf-meta` next to the data, renaming the data to `.sigmf-data`:
 
 ```json
 {

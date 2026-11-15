@@ -4,6 +4,14 @@
 // right), y is time (row i of R covers the i-th R-th of the recording, ADR 0006). Everything
 // that converts between texture space, sample indices, frequencies and the labels on screen
 // goes through one Geometry, built per (recording, FFT size).
+//
+// Texel k of a row is FFT bin k, so its centre, x = (k + ½)/fft, is at the bin's frequency
+// cf + (k − fft/2)·sr/fft. The band therefore runs from half a bin below cf − sr/2 to half a
+// bin below cf + sr/2.
+//
+// Without a sample rate there are no Hz or seconds: frequencies are in cycles per sample
+// (−0.5 to 0.5) and times in samples. Without a centre frequency, frequencies are relative to
+// the band centre (0 Hz).
 
 import * as fmt from './format'
 
@@ -27,6 +35,8 @@ export interface DetailWindow {
 export interface Geometry {
   readonly fft: number
   readonly numSamples: number
+  /** The sample rate is known: Hz and seconds. Otherwise cycles/sample and samples. */
+  readonly calibrated: boolean
   /** Frequency at texture x. */
   freqAt(x: number): number
   /** Texture x of a frequency (inverse of freqAt). */
@@ -57,15 +67,19 @@ export interface RecordingLike {
 
 export function geometry(r: RecordingLike, fft: number): Geometry {
   const n = Math.max(1, r.num_samples ?? 0)
-  const sr = r.sample_rate ?? 1
-  const cf = r.center_freq ?? 0
+  const calibrated = !!r.sample_rate && r.sample_rate > 0
+  const sr = calibrated ? r.sample_rate! : 1
+  const cf = calibrated ? (r.center_freq ?? 0) : 0
   const clamp = (x: number) => Math.min(1, Math.max(0, x))
-  const freqAt = (x: number) => cf + (x - 0.5) * sr
+  // Texture x of the DC bin's centre: half a bin right of the middle.
+  const xDc = 0.5 + 0.5 / fft
+  const freqAt = (x: number) => cf + (x - xDc) * sr
   const g: Geometry = {
     fft,
     numSamples: n,
+    calibrated,
     freqAt,
-    xAt: (f) => (f - cf) / sr + 0.5,
+    xAt: (f) => (f - cf) / sr + xDc,
     binFreq: (k) => cf + ((k - fft / 2) * sr) / fft,
     timeOf: (s) => s / sr,
     sampleOf: (t) => t * sr,
@@ -83,8 +97,8 @@ export function geometry(r: RecordingLike, fft: number): Geometry {
         fHi: freqAt(Math.max(view.x0, view.x1)),
       }
     },
-    formatFreq: (f, digits = 6) => fmt.hz(f, digits),
-    formatTime: (t) => fmt.seconds(t),
+    formatFreq: (f, digits = 6) => (calibrated ? fmt.hz(f, digits) : fmt.cycles(f, digits)),
+    formatTime: (t) => (calibrated ? fmt.seconds(t) : fmt.samples(t)),
   }
   return g
 }
