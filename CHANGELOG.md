@@ -1,3 +1,9 @@
+## v0.2.0 (2026-11-15)
+
+### Feat
+
+- **web**: folders view with source and directory tree
+
 ## v0.2.0-beta.0 (2026-11-15)
 
 ### Feat

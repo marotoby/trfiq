@@ -37,6 +37,6 @@ raw samples and stays responsive even on 100 GB files.
 
 ## Current version
 
-`0.2.0-beta.0`: see [`CHANGELOG.md`](../../CHANGELOG.md). This is a beta: the
+`0.2.0`: see [`CHANGELOG.md`](../../CHANGELOG.md). The
 [roadmap](../../README.md#roadmap) lists what is still missing, notably full-resolution
 zoom tiles and metadata entry for raw files.

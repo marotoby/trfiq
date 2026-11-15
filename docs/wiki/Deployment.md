@@ -6,7 +6,7 @@ non-root base image (about 44 MB).
 ## Build the image
 
 ```sh
-docker build -f deploy/Dockerfile -t trfiq:0.2.0-beta.0 .
+docker build -f deploy/Dockerfile -t trfiq:0.2.0 .
 ```
 
 The build has three stages: bun builds the UI, Rust compiles the server with the UI embedded,
@@ -20,7 +20,7 @@ docker run -d --name trfiq --restart unless-stopped -p 8080:8080 \
   -v "$PWD/config.yaml:/etc/trfiq/config.yaml:ro" \
   -v trfiq-data:/var/lib/trfiq \
   -v /data/iq:/mnt/recordings:ro \
-  trfiq:0.2.0-beta.0
+  trfiq:0.2.0
 ```
 
 | Mount | |
