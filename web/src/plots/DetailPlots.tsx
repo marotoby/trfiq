@@ -7,6 +7,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { api, type PsdData, type RecordingDetail, type TimeData, type WindowFn } from '../api'
+import type { Annotation } from '../annotations'
 import * as fmt from '../format'
 import { Icon, type IconName } from '../ui'
 
@@ -129,8 +130,8 @@ export function SpectrumPlot(p: { r: RecordingDetail; win: DetailWindow; fft: nu
       legend: { live: true },
       series: [
         { label: 'Freq', value: (_u, v) => (v == null ? '—' : fmt.hz(v, 9)) },
-        { label: 'Mean', stroke: C.mean, width: 1.5, value: dbValue },
-        { label: 'Max hold', stroke: C.max, width: 1, value: dbValue },
+        { label: 'Mean', stroke: C.mean, width: 1.5, value: dbValue, points: { show: false } },
+        { label: 'Max hold', stroke: C.max, width: 1, value: dbValue, points: { show: false } },
       ],
       axes: [axis((v) => fmt.hz(v, 6), { space: 90 }), axis((v) => `${v}`, { size: 44, label: 'dBFS', labelSize: 14, labelFont: C.font })],
     }),
@@ -182,8 +183,18 @@ function usePsdData(d: PsdData | undefined, r: RecordingDetail): uPlot.AlignedDa
 
 // ---- time ----------------------------------------------------------------------------------
 
-export function TimePlot(p: { r: RecordingDetail; win: DetailWindow }) {
+export function TimePlot(p: {
+  r: RecordingDetail
+  win: DetailWindow
+  /** Annotations to draw (already filtered by label / visibility). */
+  annotations: Annotation[]
+  selected: number | null
+  onSelect: (a: Annotation) => void
+}) {
   const { r, win } = p
+  const sr = r.sample_rate ?? 1
+  const ann = useRef({ list: p.annotations, selected: p.selected, sr, onSelect: p.onSelect })
+  ann.current = { list: p.annotations, selected: p.selected, sr, onSelect: p.onSelect }
   const q = useQuery({
     queryKey: ['time', r.id, win.start, win.count],
     queryFn: ({ signal }) => api.time(r.id, { start: win.start, count: win.count, points: TIME_POINTS }, signal),
@@ -191,23 +202,37 @@ export function TimePlot(p: { r: RecordingDetail; win: DetailWindow }) {
     placeholderData: keepPreviousData,
   })
   const data = useTimeData(q.data, r)
-  const { hostRef } = usePlot(
+  const { hostRef, plotRef } = usePlot(
     () => ({
+      hooks: {
+        // Bands under the traces, labels on top of them.
+        drawClear: [(u) => drawAnnotationBands(u, ann.current.list, ann.current.selected, ann.current.sr)],
+        draw: [(u) => drawAnnotationLabels(u, ann.current.list, ann.current.selected, ann.current.sr)],
+        ready: [(u) => clickToSelect(u, (t) => {
+          const a = annotationAt(ann.current.list, t * ann.current.sr)
+          if (a) ann.current.onSelect(a)
+        })],
+      },
       scales: { x: { time: false } },
       cursor: { drag: { x: true, y: false } },
       legend: { live: true },
       series: [
         { label: 'Time', value: (_u, v) => (v == null ? '—' : fmt.seconds(v)) },
-        { label: 'I', stroke: C.i, width: 1, value: ampValue },
-        { label: 'Q', stroke: C.q, width: 1, value: ampValue },
+        { label: 'I', stroke: C.i, width: 1, value: ampValue, points: { show: false } },
+        { label: 'Q', stroke: C.q, width: 1, value: ampValue, points: { show: false } },
       ],
       axes: [axis(fmt.seconds, { space: 80 }), axis((v) => `${+v.toFixed(3)}`, { size: 44, space: 24 })],
     }),
     data,
   )
 
+  useEffect(() => {
+    // Redrawing before the first data would draw axes uPlot hasn't laid out yet (it throws).
+    const u = plotRef.current
+    if (u && u.data[0]?.length) u.redraw(false)
+  }, [p.annotations, p.selected, plotRef])
+
   const d = q.data
-  const sr = r.sample_rate ?? 1
   return (
     <PlotCard
       icon="wave"
@@ -278,4 +303,95 @@ function useTimeData(d: TimeData | undefined, r: RecordingDetail): uPlot.Aligned
   const out: uPlot.AlignedData = [t as unknown as number[], i as unknown as number[], q as unknown as number[]]
   cache.current = { d, out }
   return out
+}
+
+// ---- annotations on the time plot ----------------------------------------------------------
+
+/** The shortest annotation covering `sample`, so nested ones stay clickable. */
+function annotationAt(list: Annotation[], sample: number): Annotation | null {
+  let best: Annotation | null = null
+  for (const a of list) {
+    if (sample >= a.start && sample <= a.start + a.count && (!best || a.count < best.count)) best = a
+  }
+  return best
+}
+
+/** Visible annotations as canvas x ranges, clipped to the plot area. */
+function bands(u: uPlot, list: Annotation[], sr: number) {
+  const { min, max } = u.scales.x
+  if (min == null || max == null) return []
+  const { left, width } = u.bbox
+  return list.flatMap((a) => {
+    const t0 = a.start / sr
+    const t1 = (a.start + a.count) / sr
+    if (t1 < min || t0 > max) return []
+    const x0 = Math.max(left, u.valToPos(t0, 'x', true))
+    const x1 = Math.min(left + width, u.valToPos(t1, 'x', true))
+    return [{ a, x0, x1: Math.max(x1, x0 + 1) }]
+  })
+}
+
+function drawAnnotationBands(u: uPlot, list: Annotation[], selected: number | null, sr: number) {
+  const { ctx, bbox } = u
+  const px = devicePixelRatio
+  ctx.save()
+  for (const { a, x0, x1 } of bands(u, list, sr)) {
+    const sel = a.id === selected
+    ctx.globalAlpha = sel ? 0.24 : 0.1
+    ctx.fillStyle = a.color
+    ctx.fillRect(x0, bbox.top, x1 - x0, bbox.height)
+    ctx.globalAlpha = sel ? 1 : 0.55
+    ctx.strokeStyle = a.color
+    ctx.lineWidth = (sel ? 1.5 : 1) * px
+    ctx.beginPath()
+    for (const x of [x0, x1]) {
+      ctx.moveTo(x, bbox.top)
+      ctx.lineTo(x, bbox.top + bbox.height)
+    }
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function drawAnnotationLabels(u: uPlot, list: Annotation[], selected: number | null, sr: number) {
+  const { ctx, bbox } = u
+  const px = devicePixelRatio
+  const h = 15 * px
+  const rowEnds = [-Infinity, -Infinity]
+  ctx.save()
+  ctx.font = `600 ${10 * px}px Inter, ui-sans-serif, system-ui, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left' // uPlot leaves whatever its axes used
+  // Selected first, so it always gets a slot; others take the first free row or are skipped.
+  const items = bands(u, list, sr).sort((p, q) => Number(q.a.id === selected) - Number(p.a.id === selected) || p.x0 - q.x0)
+  for (const { a, x0 } of items) {
+    const w = ctx.measureText(a.label).width + 10 * px
+    const x = Math.min(x0, bbox.left + bbox.width - w)
+    const row = rowEnds.findIndex((end) => x >= end + 3 * px)
+    if (row < 0) continue
+    rowEnds[row] = x + w
+    const y = bbox.top + 3 * px + row * (h + 2 * px)
+    ctx.globalAlpha = 0.92
+    ctx.fillStyle = a.id === selected ? a.color : 'rgba(17, 19, 25, 0.9)'
+    ctx.beginPath()
+    ctx.roundRect(x, y, w, h, 4 * px)
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = a.color
+    ctx.lineWidth = px
+    ctx.stroke()
+    ctx.fillStyle = a.id === selected ? '#0a0b0f' : '#e7e9ee'
+    ctx.fillText(a.label, x + 5 * px, y + h / 2)
+  }
+  ctx.restore()
+}
+
+/** Call `onClick(time)` for clicks on the plot, but not at the end of a drag-zoom. */
+function clickToSelect(u: uPlot, onClick: (t: number) => void) {
+  let down: { x: number; y: number } | null = null
+  u.over.addEventListener('mousedown', (e) => (down = { x: e.clientX, y: e.clientY }))
+  u.over.addEventListener('click', (e) => {
+    if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 3) return
+    onClick(u.posToVal(e.offsetX, 'x'))
+  })
 }

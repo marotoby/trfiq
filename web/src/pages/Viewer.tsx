@@ -119,6 +119,11 @@ export function Viewer() {
       .filter((a): a is PlotAnnotation => a != null)
   }, [annotations, hiddenLabels, rec.data])
 
+  const listedAnnotations = useMemo(
+    () => (showAnn ? annotations.filter((a) => !hiddenLabels.has(a.label)) : NO_ANNOTATIONS),
+    [annotations, hiddenLabels, showAnn],
+  )
+
   const selectAnnotation = (a: Annotation | null, zoom: boolean) => {
     setSelected(a?.id ?? null)
     if (!a || !zoom || !rec.data) return
@@ -259,7 +264,16 @@ export function Viewer() {
           )}
         </section>
         {viewable && (panels.spectrum || panels.time) && (
-          <DetailRow r={r} v={search.v} fft={fft} windowFn={windowFn} panels={panels} />
+          <DetailRow
+            r={r}
+            v={search.v}
+            fft={fft}
+            windowFn={windowFn}
+            panels={panels}
+            annotations={listedAnnotations}
+            selected={selected}
+            onSelect={(a) => selectAnnotation(a, false)}
+          />
         )}
         </div>
 
@@ -290,7 +304,18 @@ export function Viewer() {
 
 // ---- detail plots for the visible window ---------------------------------------------------
 
-function DetailRow(p: { r: RecordingDetail; v?: string; fft: number; windowFn: WindowFn; panels: Panels }) {
+const NO_ANNOTATIONS: Annotation[] = []
+
+function DetailRow(p: {
+  r: RecordingDetail
+  v?: string
+  fft: number
+  windowFn: WindowFn
+  panels: Panels
+  annotations: Annotation[]
+  selected: number | null
+  onSelect: (a: Annotation) => void
+}) {
   const { r, v } = p
   // Driven by the (debounced) view in the URL, so panning doesn't flood the server.
   const win = useMemo<DetailWindow>(() => {
@@ -312,7 +337,9 @@ function DetailRow(p: { r: RecordingDetail; v?: string; fft: number; windowFn: W
   return (
     <div className={`detail-row${p.panels.spectrum && p.panels.time ? ' two' : ''}`}>
       {p.panels.spectrum && <SpectrumPlot r={r} win={win} fft={p.fft} window={p.windowFn} />}
-      {p.panels.time && <TimePlot r={r} win={win} />}
+      {p.panels.time && (
+        <TimePlot r={r} win={win} annotations={p.annotations} selected={p.selected} onSelect={p.onSelect} />
+      )}
     </div>
   )
 }

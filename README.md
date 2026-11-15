@@ -152,7 +152,8 @@ Hovering shows frequency, time, power and the annotation under the cursor.
 
 The **Spectrum** and **Time** panels under the spectrogram always cover the time range that's
 visible, so zoom into a burst and they show just that burst. The spectrum also follows the
-frequency zoom. Each request reads at most ~2M samples. Over that, the panel shows a `sampled`
+frequency zoom. Annotations are drawn on the time plot as labelled bands; click one to select
+it. Each request reads at most ~2M samples. Over that, the panel shows a `sampled`
 badge: FFT segments, or slices of the envelope, are spread evenly across the window.
 
 ## How it works

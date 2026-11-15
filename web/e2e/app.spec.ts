@@ -166,6 +166,13 @@ test('spectrum and time plots follow the visible window', async ({ page }) => {
   await expect(time).toContainText('envelope')
   expect(await distinctColours(page, '[data-testid="spectrum-plot"] canvas')).toBeGreaterThan(3)
 
+  // Annotations are drawn on the time plot; clicking one there selects it.
+  // The first LoRa burst spans 300–335 ms of the 2.097 s recording.
+  const over = time.locator('.u-over')
+  const ob = (await over.boundingBox())!
+  await over.click({ position: { x: ob.width * (0.317 / 2.097), y: ob.height / 2 } })
+  await expect(page.locator('.ann-item.selected')).toContainText('LoRa')
+
   // Zooming to an annotation narrows the window: the time plot switches to raw samples.
   const timeReq = page.waitForRequest((r) => r.url().includes('/time?') && !r.url().includes('start=0&'))
   await page.locator('.ann-item', { hasText: 'LoRa' }).first().click()
