@@ -1,0 +1,16 @@
+[package]
+name = "trfiq-dsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+rustfft.workspace = true
+rayon.workspace = true
+num-complex.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

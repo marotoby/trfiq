@@ -1,0 +1,203 @@
+{
+ "fft_size": 512,
+ "cases": [
+  {
+   "datatype": "cf64_le",
+   "window": "hann",
+   "input": "cf64_le.bin",
+   "expected": "cf64_le.hann.expected.f32"
+  },
+  {
+   "datatype": "cf64_le",
+   "window": "blackman-harris",
+   "input": "cf64_le.bin",
+   "expected": "cf64_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "cf64_le",
+   "window": "rect",
+   "input": "cf64_le.bin",
+   "expected": "cf64_le.rect.expected.f32"
+  },
+  {
+   "datatype": "cf32_le",
+   "window": "hann",
+   "input": "cf32_le.bin",
+   "expected": "cf32_le.hann.expected.f32"
+  },
+  {
+   "datatype": "cf32_le",
+   "window": "blackman-harris",
+   "input": "cf32_le.bin",
+   "expected": "cf32_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "cf32_le",
+   "window": "rect",
+   "input": "cf32_le.bin",
+   "expected": "cf32_le.rect.expected.f32"
+  },
+  {
+   "datatype": "cf32_be",
+   "window": "hann",
+   "input": "cf32_be.bin",
+   "expected": "cf32_be.hann.expected.f32"
+  },
+  {
+   "datatype": "cf32_be",
+   "window": "blackman-harris",
+   "input": "cf32_be.bin",
+   "expected": "cf32_be.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "cf32_be",
+   "window": "rect",
+   "input": "cf32_be.bin",
+   "expected": "cf32_be.rect.expected.f32"
+  },
+  {
+   "datatype": "ci32_le",
+   "window": "hann",
+   "input": "ci32_le.bin",
+   "expected": "ci32_le.hann.expected.f32"
+  },
+  {
+   "datatype": "ci32_le",
+   "window": "blackman-harris",
+   "input": "ci32_le.bin",
+   "expected": "ci32_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "ci32_le",
+   "window": "rect",
+   "input": "ci32_le.bin",
+   "expected": "ci32_le.rect.expected.f32"
+  },
+  {
+   "datatype": "ci16_le",
+   "window": "hann",
+   "input": "ci16_le.bin",
+   "expected": "ci16_le.hann.expected.f32"
+  },
+  {
+   "datatype": "ci16_le",
+   "window": "blackman-harris",
+   "input": "ci16_le.bin",
+   "expected": "ci16_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "ci16_le",
+   "window": "rect",
+   "input": "ci16_le.bin",
+   "expected": "ci16_le.rect.expected.f32"
+  },
+  {
+   "datatype": "ci16_be",
+   "window": "hann",
+   "input": "ci16_be.bin",
+   "expected": "ci16_be.hann.expected.f32"
+  },
+  {
+   "datatype": "ci16_be",
+   "window": "blackman-harris",
+   "input": "ci16_be.bin",
+   "expected": "ci16_be.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "ci16_be",
+   "window": "rect",
+   "input": "ci16_be.bin",
+   "expected": "ci16_be.rect.expected.f32"
+  },
+  {
+   "datatype": "ci8",
+   "window": "hann",
+   "input": "ci8.bin",
+   "expected": "ci8.hann.expected.f32"
+  },
+  {
+   "datatype": "ci8",
+   "window": "blackman-harris",
+   "input": "ci8.bin",
+   "expected": "ci8.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "ci8",
+   "window": "rect",
+   "input": "ci8.bin",
+   "expected": "ci8.rect.expected.f32"
+  },
+  {
+   "datatype": "cu16_le",
+   "window": "hann",
+   "input": "cu16_le.bin",
+   "expected": "cu16_le.hann.expected.f32"
+  },
+  {
+   "datatype": "cu16_le",
+   "window": "blackman-harris",
+   "input": "cu16_le.bin",
+   "expected": "cu16_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "cu16_le",
+   "window": "rect",
+   "input": "cu16_le.bin",
+   "expected": "cu16_le.rect.expected.f32"
+  },
+  {
+   "datatype": "cu8",
+   "window": "hann",
+   "input": "cu8.bin",
+   "expected": "cu8.hann.expected.f32"
+  },
+  {
+   "datatype": "cu8",
+   "window": "blackman-harris",
+   "input": "cu8.bin",
+   "expected": "cu8.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "cu8",
+   "window": "rect",
+   "input": "cu8.bin",
+   "expected": "cu8.rect.expected.f32"
+  },
+  {
+   "datatype": "rf32_le",
+   "window": "hann",
+   "input": "rf32_le.bin",
+   "expected": "rf32_le.hann.expected.f32"
+  },
+  {
+   "datatype": "rf32_le",
+   "window": "blackman-harris",
+   "input": "rf32_le.bin",
+   "expected": "rf32_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "rf32_le",
+   "window": "rect",
+   "input": "rf32_le.bin",
+   "expected": "rf32_le.rect.expected.f32"
+  },
+  {
+   "datatype": "ri16_le",
+   "window": "hann",
+   "input": "ri16_le.bin",
+   "expected": "ri16_le.hann.expected.f32"
+  },
+  {
+   "datatype": "ri16_le",
+   "window": "blackman-harris",
+   "input": "ri16_le.bin",
+   "expected": "ri16_le.blackman-harris.expected.f32"
+  },
+  {
+   "datatype": "ri16_le",
+   "window": "rect",
+   "input": "ri16_le.bin",
+   "expected": "ri16_le.rect.expected.f32"
+  }
+ ]
+}
