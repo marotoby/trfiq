@@ -72,6 +72,8 @@ if git diff --cached --quiet; then
   echo "wiki already up to date"
   exit 0
 fi
-git commit -q -m "docs: sync wiki from $(git -C "$root" rev-parse --short HEAD)"
+# Commit as whoever commits in the main repo (the clone has no identity of its own).
+git -c user.name="$(git -C "$root" config user.name)" -c user.email="$(git -C "$root" config user.email)" \
+  commit -q -m "docs: sync wiki from $(git -C "$root" rev-parse --short HEAD)"
 git push -q origin HEAD
 echo "published: https://github.com/$slug/wiki"
