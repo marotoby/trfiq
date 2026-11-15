@@ -34,7 +34,7 @@ cd web && bunx playwright test         # needs a running server; TRFIQ_URL, defa
 | `crates/server/src/samples.rs` | The sample-window reader: window checks, read plans and the detail cap, range reads against a local source, cancellation |
 | `crates/server/tests/api.rs` | Smoke tests of the HTTP API end to end over a local source |
 | `crates/server/src/wire.rs` | Writes `web/src/wire-fixtures/` from the response encoders and fails if they're stale (`TRFIQ_UPDATE_FIXTURES=1 scripts/cargo.sh test -p trfiq-server wire` rewrites them) |
-| `web/src/*.test.ts` (`bun run test`) | Recording geometry (texture space ↔ samples and frequencies, bin centres, units, annotation placement) and the wire decoders, against the server's fixtures |
+| `web/src/*.test.ts` (`bun run test`) | Recording geometry (texture space ↔ samples and frequencies, bin centres, units, annotation placement) the wire decoders against the server's fixtures, and the spectrogram's view model (zoom, pan, box zoom, history, keys, URL form) |
 | `web/e2e/app.spec.ts` | Playwright: list, search, hover preview, gallery, viewer, box zoom, annotations, detail plots. Fails on any console error |
 
 ## Layout
@@ -48,7 +48,7 @@ cd web && bunx playwright test         # needs a running server; TRFIQ_URL, defa
 | `web/src/geometry.ts` | Recording geometry: every texture-space ↔ sample / frequency conversion and its units |
 | `web/src/wire.ts` | Decodes every binary response into plot-ready values; the counterpart of `crates/server/src/wire.rs` |
 | `web/src/pages` | Recording list (table, gallery, folders) and viewer |
-| `web/src/spectrogram` | WebGL2 spectrogram, colormaps, thumbnails |
+| `web/src/spectrogram` | `viewModel.ts` (the visible region, history, navigation rules, key map, URL form; no DOM), the WebGL2 renderer that draws it, colormaps, thumbnails |
 | `web/src/plots` | uPlot Spectrum and Time panels |
 | `deploy/` | Dockerfile, compose demo stack, configs |
 | `scripts/` | Demo data, golden fixtures, logo generator, containerised cargo |

@@ -108,7 +108,9 @@ SigMF annotations appear:
 ## Sharing a view
 
 Everything that defines the view is in the URL: the recording, FFT size, window, colormap,
-levels and the zoom region. Copy the address bar to share exactly what you see.
+levels and the zoom region. Copy the address bar to share exactly what you see. The URL
+catches up a quarter of a second after the view stops moving; going to a URL with a different
+`v` (a link, or the browser's Back) moves the plot to it.
 
 | Parameter | |
 |---|---|

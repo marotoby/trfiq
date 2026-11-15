@@ -123,6 +123,32 @@ test('box zoom zooms to the dragged region and Back restores the view', async ({
   expect(errors).toEqual([])
 })
 
+test('a URL changed from outside moves the plot and the detail plots', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?q=chirps')
+  await page.locator('.tr').first().click()
+  await expect(page.locator('.statusbar')).toContainText('strided overview')
+  const timeInfo = page.getByTestId('time-plot').locator('.detail-info')
+  await expect(timeInfo).toContainText(/samples/)
+  const before = (await timeInfo.textContent()) ?? ''
+
+  // Navigate within the app (as a link or history entry would) to the first tenth in time.
+  await page.evaluate(() => {
+    const u = new URL(location.href)
+    u.searchParams.set('v', '0,1,0,0.1')
+    history.pushState(history.state, '', u)
+    dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+  })
+  // The detail plots follow the plot's new view: a tenth of the samples.
+  const total = Number(before.match(/^([\d,]+) samples/)![1].replaceAll(',', ''))
+  await expect(timeInfo).toContainText(`${Math.ceil(total / 10).toLocaleString('en-US')} samples`)
+  // And Back in the browser takes the plot back with it.
+  await page.goBack()
+  await expect(page).not.toHaveURL(/v=/)
+  await expect(timeInfo).toHaveText(before)
+  expect(errors).toEqual([])
+})
+
 test('annotations are listed, filterable, and zoom the plot when clicked', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto('/?q=ism_433')

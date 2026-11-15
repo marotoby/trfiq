@@ -1,5 +1,6 @@
-// WebGL2 spectrogram, deliberately outside React's render cycle: React hands it data and
-// settings; pan/zoom/cursor/annotations are handled here and drawn on requestAnimationFrame.
+// WebGL2 spectrogram renderer, deliberately outside React's render cycle: React hands it data
+// and settings, it draws the view its ViewModel holds on requestAnimationFrame, and it turns
+// pointer input into ViewModel calls. Navigation rules live in viewModel.ts, not here.
 //
 // Data is uploaded once as an R16UI texture of quantised dB (ADR 0002). The fragment shader
 // maps dB → colour through a LUT, so colormap and dB-range changes never touch the data.
@@ -10,14 +11,9 @@ import { colormapLut, type Colormap } from './colormaps'
 import { ticks } from '../format'
 import type { Geometry } from '../geometry'
 import { dbOf, dbPercentiles, type Overview, type Quant } from '../wire'
+import { FULL_VIEW, ViewModel, type Mode, type View } from './viewModel'
 
-export interface View {
-  /** Visible part of the data in [0, 1] texture space. x = frequency, y = time (0 = start). */
-  x0: number
-  x1: number
-  y0: number
-  y1: number
-}
+export { FULL_VIEW, type Mode, type View }
 
 export interface CursorInfo {
   freq: number
@@ -33,16 +29,9 @@ export interface PlotAnnotation extends View {
   color: string
 }
 
-export type Mode = 'zoom' | 'pan'
-
-export const FULL_VIEW: View = { x0: 0, x1: 1, y0: 0, y1: 1 }
-
 const MARGIN = { left: 76, bottom: 28, top: 8, right: 10 }
 /** Max texels sampled per axis per pixel; beyond this the max-hold strides. */
 const MAX_TAPS = 12
-/** A drag shorter than this (px) is a click; a box thinner than this zooms one axis only. */
-const CLICK_PX = 4
-const THIN_PX = 10
 
 const VERT = `#version 300 es
 void main() {
@@ -94,13 +83,11 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
 }
 
 type Gesture =
-  | { kind: 'pan'; x: number; y: number; view: View; moved: boolean }
+  | { kind: 'pan'; x: number; y: number }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number }
 
 export class SpectrogramView {
-  onViewChange?: (v: View) => void
   onCursor?: (c: CursorInfo | null) => void
-  onHistoryChange?: (canGoBack: boolean) => void
   onAnnotationClick?: (id: number | null) => void
 
   private glCanvas: HTMLCanvasElement
@@ -116,8 +103,6 @@ export class SpectrogramView {
   private h = 0
   private quant: Quant = { dbMin: -200, dbStep: 0.005 }
   private db = { lo: -120, hi: 0 }
-  private view: View = { ...FULL_VIEW }
-  private history: View[] = []
   private geo: Geometry | null = null
   private mode: Mode = 'zoom'
   private annotations: PlotAnnotation[] = []
@@ -130,7 +115,12 @@ export class SpectrogramView {
   private ro: ResizeObserver
   private abort = new AbortController()
 
-  constructor(private root: HTMLElement) {
+  private unsubscribe: () => void
+
+  constructor(
+    private root: HTMLElement,
+    private model: ViewModel,
+  ) {
     root.style.position = 'relative'
     this.glCanvas = document.createElement('canvas')
     this.overlayCanvas = document.createElement('canvas')
@@ -167,6 +157,10 @@ export class SpectrogramView {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     this.setColormap('turbo')
 
+    this.unsubscribe = model.subscribe(() => {
+      this.emitCursor()
+      this.invalidate()
+    })
     this.ro = new ResizeObserver(() => this.resize())
     this.ro.observe(root)
     this.bindEvents()
@@ -176,6 +170,7 @@ export class SpectrogramView {
 
   destroy() {
     cancelAnimationFrame(this.raf)
+    this.unsubscribe()
     this.ro.disconnect()
     this.abort.abort()
     this.gl.getExtension('WEBGL_lose_context')?.loseContext()
@@ -203,6 +198,7 @@ export class SpectrogramView {
     this.w = width
     this.h = height
     this.quant = quant
+    this.model.setResolution(width, height)
     this.invalidate()
   }
 
@@ -245,75 +241,12 @@ export class SpectrogramView {
     this.invalidate()
   }
 
-  // ---- view & history ---------------------------------------------------------------------
-
-  /** Set the view, clamped to the data. `record` pushes the current view onto the history. */
-  setView(v: View, notify = false, record = false) {
-    const minW = Math.min(1, 2 / Math.max(this.w, 1))
-    const minH = Math.min(1, 2 / Math.max(this.h, 1))
-    const fit = (a: number, b: number, min: number): [number, number] => {
-      let span = Math.min(1, Math.max(min, b - a))
-      let start = Math.min(1 - span, Math.max(0, a))
-      if (!isFinite(start) || !isFinite(span)) [start, span] = [0, 1]
-      return [start, start + span]
-    }
-    const [x0, x1] = fit(v.x0, v.x1, minW)
-    const [y0, y1] = fit(v.y0, v.y1, minH)
-    const next = { x0, x1, y0, y1 }
-    if (record && !sameView(next, this.view)) {
-      this.history.push({ ...this.view })
-      if (this.history.length > 100) this.history.shift()
-      this.onHistoryChange?.(true)
-    }
-    this.view = next
+  /** Drop a box or pan drag in progress (Escape). */
+  cancelGesture() {
+    if (this.gesture?.kind === 'pan') this.model.endDrag()
+    this.gesture = null
+    this.updateCursorStyle()
     this.invalidate()
-    if (notify) this.onViewChange?.(this.view)
-  }
-
-  getView(): View {
-    return { ...this.view }
-  }
-
-  back() {
-    const prev = this.history.pop()
-    if (prev) this.setView(prev, true)
-    this.onHistoryChange?.(this.history.length > 0)
-  }
-
-  reset() {
-    this.setView(FULL_VIEW, true, true)
-  }
-
-  /** Zoom so `r` fills the view with some padding around it. */
-  zoomTo(r: View, pad = 0.35) {
-    const pw = Math.max((r.x1 - r.x0) * pad, 4 / Math.max(this.w, 1))
-    const ph = Math.max((r.y1 - r.y0) * pad, 4 / Math.max(this.h, 1))
-    this.setView({ x0: r.x0 - pw, x1: r.x1 + pw, y0: r.y0 - ph, y1: r.y1 + ph }, true, true)
-  }
-
-  /** Zoom by `fx`/`fy` (< 1 zooms in) around a point given in [0,1] plot space. */
-  zoom(fx: number, fy: number, px = 0.5, py = 0.5, record = false) {
-    const v = this.view
-    const cx = v.x0 + (v.x1 - v.x0) * px
-    const cy = v.y0 + (v.y1 - v.y0) * py
-    this.setView(
-      {
-        x0: cx - (cx - v.x0) * fx,
-        x1: cx + (v.x1 - cx) * fx,
-        y0: cy - (cy - v.y0) * fy,
-        y1: cy + (v.y1 - cy) * fy,
-      },
-      true,
-      record,
-    )
-  }
-
-  /** Pan by a fraction of the visible span. */
-  pan(dx: number, dy: number) {
-    const v = this.view
-    const sx = (v.x1 - v.x0) * dx
-    const sy = (v.y1 - v.y0) * dy
-    this.setView({ x0: v.x0 + sx, x1: v.x1 + sx, y0: v.y0 + sy, y1: v.y1 + sy }, true)
   }
 
   // ---- interaction ------------------------------------------------------------------------
@@ -323,7 +256,7 @@ export class SpectrogramView {
   }
 
   private toTex(p: { x: number; y: number }) {
-    const v = this.view
+    const v = this.model.view
     return { x: v.x0 + (v.x1 - v.x0) * p.x, y: v.y0 + (v.y1 - v.y0) * p.y }
   }
 
@@ -363,7 +296,7 @@ export class SpectrogramView {
         const p = rel(e)
         // wheel: time; shift+wheel: frequency; ctrl/meta+wheel: both.
         const both = e.ctrlKey || e.metaKey
-        this.zoom(e.shiftKey || both ? f : 1, e.shiftKey && !both ? 1 : f, p.x, p.y)
+        this.model.zoom(e.shiftKey || both ? f : 1, e.shiftKey && !both ? 1 : f, p.x, p.y)
       },
       { ...opts, passive: false },
     )
@@ -376,7 +309,8 @@ export class SpectrogramView {
         if (e.button === 0 && this.mode === 'zoom') {
           this.gesture = { kind: 'box', x0: p.x, y0: p.y, x1: p.x, y1: p.y }
         } else {
-          this.gesture = { kind: 'pan', x: e.clientX, y: e.clientY, view: { ...this.view }, moved: false }
+          this.gesture = { kind: 'pan', x: e.clientX, y: e.clientY }
+          this.model.beginDrag()
         }
         this.updateCursorStyle()
       },
@@ -390,15 +324,8 @@ export class SpectrogramView {
         const g = this.gesture
         if (g?.kind === 'pan') {
           const { w, h } = this.plotSize()
-          const v = g.view
-          const dx = ((e.clientX - g.x) / w) * (v.x1 - v.x0)
-          const dy = ((e.clientY - g.y) / h) * (v.y1 - v.y0)
-          if (Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y) > CLICK_PX && !g.moved) {
-            g.moved = true
-            this.history.push({ ...v })
-            this.onHistoryChange?.(true)
-          }
-          this.setView({ x0: v.x0 - dx, x1: v.x1 - dx, y0: v.y0 - dy, y1: v.y1 - dy })
+          const px = Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y)
+          this.model.dragTo((e.clientX - g.x) / w, (e.clientY - g.y) / h, px)
         } else if (g?.kind === 'box') {
           g.x1 = Math.min(1, Math.max(0, p.x))
           g.y1 = Math.min(1, Math.max(0, p.y))
@@ -418,42 +345,18 @@ export class SpectrogramView {
       const g = this.gesture
       this.gesture = null
       if (!g) return
-      const { w, h } = this.plotSize()
-      if (g.kind === 'pan') {
-        if (g.moved) this.onViewChange?.(this.view)
-        else this.click(rel(e))
-      } else {
-        const wpx = Math.abs(g.x1 - g.x0) * w
-        const hpx = Math.abs(g.y1 - g.y0) * h
-        if (wpx < CLICK_PX && hpx < CLICK_PX) {
-          this.click(rel(e))
-        } else {
-          const a = this.toTex({ x: Math.min(g.x0, g.x1), y: Math.min(g.y0, g.y1) })
-          const b = this.toTex({ x: Math.max(g.x0, g.x1), y: Math.max(g.y0, g.y1) })
-          const v = this.view
-          // A thin box zooms only along its long side.
-          this.setView(
-            {
-              x0: wpx < THIN_PX ? v.x0 : a.x,
-              x1: wpx < THIN_PX ? v.x1 : b.x,
-              y0: hpx < THIN_PX ? v.y0 : a.y,
-              y1: hpx < THIN_PX ? v.y1 : b.y,
-            },
-            true,
-            true,
-          )
-        }
-      }
+      const handled =
+        g.kind === 'pan'
+          ? this.model.endDrag()
+          : this.model.zoomToBox({ x: g.x0, y: g.y0 }, { x: g.x1, y: g.y1 }, this.plotSize())
+      if (!handled) this.click(rel(e))
       this.updateCursorStyle()
       this.invalidate()
     }
     c.addEventListener('pointerup', end, opts)
     c.addEventListener(
       'pointercancel',
-      () => {
-        this.gesture = null
-        this.invalidate()
-      },
+      () => this.cancelGesture(),
       opts,
     )
     c.addEventListener(
@@ -467,34 +370,12 @@ export class SpectrogramView {
       },
       opts,
     )
-    c.addEventListener('dblclick', () => this.reset(), opts)
+    c.addEventListener('dblclick', () => this.model.reset(), opts)
   }
 
   private click(p: { x: number; y: number }) {
     const a = this.annotationAt(p)
     this.onAnnotationClick?.(a?.id ?? null)
-  }
-
-  /** Keyboard handling; the owner wires this to a focusable element. */
-  handleKey(e: KeyboardEvent): boolean {
-    const step = 0.1
-    const zin = 0.8
-    switch (e.key) {
-      case 'ArrowLeft': this.pan(-step, 0); break
-      case 'ArrowRight': this.pan(step, 0); break
-      case 'ArrowUp': this.pan(0, -step); break
-      case 'ArrowDown': this.pan(0, step); break
-      // +/- zoom time, ]/[ zoom frequency, 0 resets, Backspace goes back.
-      case '+': case '=': this.zoom(1, zin); break
-      case '-': case '_': this.zoom(1, 1 / zin); break
-      case ']': this.zoom(zin, 1); break
-      case '[': this.zoom(1 / zin, 1); break
-      case '0': case 'Home': this.reset(); break
-      case 'Backspace': this.back(); break
-      case 'Escape': this.gesture = null; this.invalidate(); break
-      default: return false
-    }
-    return true
   }
 
   private emitCursor() {
@@ -551,7 +432,7 @@ export class SpectrogramView {
       gl.activeTexture(gl.TEXTURE1)
       gl.bindTexture(gl.TEXTURE_2D, this.lutTex)
       gl.uniform1i(this.u.u_lut, 1)
-      const v = this.view
+      const v = this.model.view
       gl.uniform4f(this.u.u_view, v.x0, v.x1, v.y0, v.y1)
       gl.uniform2f(this.u.u_size, this.glCanvas.width, this.glCanvas.height)
       gl.uniform2f(this.u.u_db, this.db.lo, this.db.hi)
@@ -573,7 +454,7 @@ export class SpectrogramView {
     const muted = style.getPropertyValue('--fg-muted').trim() || '#8a93a6'
     const grid = style.getPropertyValue('--grid').trim() || 'rgba(255,255,255,0.06)'
     const mono = style.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace'
-    const v = this.view
+    const v = this.model.view
     // Texture space → overlay pixels.
     const sx = (x: number) => L + ((x - v.x0) / (v.x1 - v.x0)) * w
     const sy = (y: number) => T + ((y - v.y0) / (v.y1 - v.y0)) * h
@@ -660,7 +541,7 @@ export class SpectrogramView {
 
   private drawAnnotations(sx: (x: number) => number, sy: (y: number) => number) {
     const ctx = this.ctx
-    const v = this.view
+    const v = this.model.view
     for (const a of this.annotations) {
       if (a.x1 < v.x0 || a.x0 > v.x1 || a.y1 < v.y0 || a.y0 > v.y1) continue
       const active = a.id === this.selected || a.id === this.hovered
@@ -702,10 +583,6 @@ export class SpectrogramView {
     ctx.textBaseline = 'middle'
     ctx.fillText(text, x + 6, y + 8.5)
   }
-}
-
-function sameView(a: View, b: View) {
-  return a.x0 === b.x0 && a.x1 === b.x1 && a.y0 === b.y0 && a.y1 === b.y1
 }
 
 /** Pick a dB window from the data: a low percentile as floor, near-max as ceiling. */

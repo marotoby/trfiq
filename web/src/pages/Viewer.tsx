@@ -7,15 +7,17 @@ import * as fmt from '../format'
 import { geometry, type Geometry } from '../geometry'
 import { COLORMAPS, colormapStops, type Colormap } from '../spectrogram/colormaps'
 import { SpectrumPlot, TimePlot } from '../plots/DetailPlots'
+import { SpectrogramView, autoDbRange, type CursorInfo, type PlotAnnotation } from '../spectrogram/SpectrogramView'
 import {
   FULL_VIEW,
-  SpectrogramView,
-  autoDbRange,
-  type CursorInfo,
+  ViewModel,
+  decodeView,
+  encodeView,
+  isViewAction,
+  keyAction,
   type Mode,
-  type PlotAnnotation,
   type View,
-} from '../spectrogram/SpectrogramView'
+} from '../spectrogram/viewModel'
 import { Divider, Field, Icon, IconButton, Segmented } from '../ui'
 
 const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384]
@@ -26,12 +28,6 @@ const PANELS_KEY = 'trfiq.panels'
 interface Panels {
   spectrum: boolean
   time: boolean
-}
-
-function parseView(v?: string): View | null {
-  const p = v?.split(',').map(Number)
-  if (!p || p.length !== 4 || p.some((n) => !Number.isFinite(n))) return null
-  return { x0: p[0], x1: p[1], y0: p[2], y1: p[3] }
 }
 
 function loadPanels(): Panels {
@@ -62,8 +58,38 @@ export function Viewer() {
   const cmap = search.cmap ?? 'turbo'
 
   const viewRef = useRef<SpectrogramView | null>(null)
-  const [mode, setModeState] = useState<Mode>(loadMode)
+  // The view model is the one source of truth for the visible region (per recording). The URL
+  // and the detail plots follow it a quarter of a second after it settles; a URL changed from
+  // outside (a link, the address bar, history) moves it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const model = useMemo(() => new ViewModel(decodeView(search.v) ?? FULL_VIEW), [id])
+  const [view, setView] = useState<View>(() => model.view)
   const [canBack, setCanBack] = useState(false)
+  const lastWritten = useRef(search.v)
+  useEffect(() => {
+    setView(model.view)
+    setCanBack(model.canGoBack)
+    let t: ReturnType<typeof setTimeout>
+    const unsubscribe = model.subscribe((s) => {
+      setCanBack(s.canGoBack)
+      clearTimeout(t)
+      t = setTimeout(() => {
+        setView(s.view)
+        lastWritten.current = encodeView(s.view)
+        navigate({ search: (q) => ({ ...q, v: lastWritten.current }), replace: true })
+      }, 250)
+    })
+    return () => {
+      clearTimeout(t)
+      unsubscribe()
+    }
+  }, [model, navigate])
+  useEffect(() => {
+    if (search.v === lastWritten.current) return
+    lastWritten.current = search.v
+    model.set(decodeView(search.v) ?? FULL_VIEW)
+  }, [search.v, model])
+  const [mode, setModeState] = useState<Mode>(loadMode)
   const [showAnn, setShowAnn] = useState(true)
   const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<number | null>(null)
@@ -128,7 +154,7 @@ export function Viewer() {
   const selectAnnotation = (a: Annotation | null, zoom: boolean) => {
     setSelected(a?.id ?? null)
     if (!a || !zoom || !geo) return
-    viewRef.current?.zoomTo(toPlot(a, geo))
+    model.zoomTo(toPlot(a, geo))
   }
 
   if (rec.error) return <div className="error page">Failed to load recording: {rec.error.message}</div>
@@ -168,8 +194,8 @@ export function Viewer() {
             { value: 'pan', label: <><Icon name="pan" /> Pan</>, title: 'Drag to pan (H). Right-drag always pans.' },
           ]}
         />
-        <IconButton icon="back" label="Previous view (Backspace)" disabled={!canBack} onClick={() => viewRef.current?.back()} />
-        <IconButton icon="fit" label="Show everything (0 / double-click)" onClick={() => viewRef.current?.reset()} />
+        <IconButton icon="back" label="Previous view (Backspace)" disabled={!canBack} onClick={() => model.back()} />
+        <IconButton icon="fit" label="Show everything (0 / double-click)" onClick={() => model.reset()} />
         <Divider />
         <Field label="FFT">
           <select value={fft} onChange={(e) => setSearch({ fft: Number(e.target.value) })}>
@@ -236,6 +262,7 @@ export function Viewer() {
           ) : (
             <Spectrogram
               viewRef={viewRef}
+              model={model}
               geo={geo}
               overview={overview.data}
               loading={overview.isFetching}
@@ -246,19 +273,10 @@ export function Viewer() {
               annotations={plotAnnotations}
               showAnnotations={showAnn}
               selected={selected}
-              initialView={parseView(search.v)}
               onMode={setMode}
               onToggleAnnotations={() => setShowAnn((s) => !s)}
               onTogglePanel={togglePanel}
-              onCanBack={setCanBack}
               onAnnotationClick={(aid) => selectAnnotation(annotations.find((a) => a.id === aid) ?? null, false)}
-              onViewChange={(v) =>
-                setSearch({
-                  v: v.x0 === 0 && v.x1 === 1 && v.y0 === 0 && v.y1 === 1
-                    ? undefined
-                    : [v.x0, v.x1, v.y0, v.y1].map((n) => +n.toFixed(5)).join(','),
-                })
-              }
             />
           )}
         </section>
@@ -266,7 +284,7 @@ export function Viewer() {
           <DetailRow
             r={r}
             geo={geo}
-            v={search.v}
+            view={view}
             fft={fft}
             windowFn={windowFn}
             panels={panels}
@@ -309,7 +327,8 @@ const NO_ANNOTATIONS: Annotation[] = []
 function DetailRow(p: {
   r: RecordingDetail
   geo: Geometry
-  v?: string
+  /** The settled view (exact, not the rounded URL form). */
+  view: View
   fft: number
   windowFn: WindowFn
   panels: Panels
@@ -317,9 +336,9 @@ function DetailRow(p: {
   selected: number | null
   onSelect: (a: Annotation) => void
 }) {
-  const { r, v, geo } = p
-  // Driven by the (debounced) view in the URL, so panning doesn't flood the server.
-  const win = useMemo(() => geo.window(parseView(v) ?? FULL_VIEW), [v, geo])
+  const { r, view, geo } = p
+  // Driven by the settled view, so panning doesn't flood the server.
+  const win = useMemo(() => geo.window(view), [view, geo])
   return (
     <div className={`detail-row${p.panels.spectrum && p.panels.time ? ' two' : ''}`}>
       {p.panels.spectrum && <SpectrumPlot r={r} win={win} fft={p.fft} window={p.windowFn} />}
@@ -486,6 +505,7 @@ function AnnotationPanel(props: {
 
 interface SpectrogramProps {
   viewRef: RefObject<SpectrogramView | null>
+  model: ViewModel
   geo: Geometry
   overview: Overview | undefined
   loading: boolean
@@ -496,13 +516,10 @@ interface SpectrogramProps {
   annotations: PlotAnnotation[]
   showAnnotations: boolean
   selected: number | null
-  initialView: View | null
   onMode: (m: Mode) => void
   onToggleAnnotations: () => void
   onTogglePanel: (k: keyof Panels) => void
-  onCanBack: (b: boolean) => void
   onAnnotationClick: (id: number | null) => void
-  onViewChange: (v: View) => void
 }
 
 function Spectrogram(p: SpectrogramProps) {
@@ -522,19 +539,12 @@ function Spectrogram(p: SpectrogramProps) {
   useEffect(() => {
     let view: SpectrogramView
     try {
-      view = new SpectrogramView(hostRef.current!)
+      view = new SpectrogramView(hostRef.current!, p.model)
     } catch (e) {
       setGlError(String(e))
       return
     }
     p.viewRef.current = view
-    if (cb.current.initialView) view.setView(cb.current.initialView)
-    let t: ReturnType<typeof setTimeout>
-    view.onViewChange = (v) => {
-      clearTimeout(t)
-      t = setTimeout(() => cb.current.onViewChange(v), 250)
-    }
-    view.onHistoryChange = (b) => cb.current.onCanBack(b)
     view.onAnnotationClick = (id) => cb.current.onAnnotationClick(id)
     // Cursor readout is written straight to the DOM: no React render per mouse move.
     view.onCursor = (c: CursorInfo | null) => {
@@ -547,12 +557,11 @@ function Spectrogram(p: SpectrogramProps) {
       readout.ann.current?.classList.toggle('visible', !!c?.annotation)
     }
     return () => {
-      clearTimeout(t)
       view.destroy()
       p.viewRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [p.model])
 
   useEffect(() => {
     const v = p.viewRef.current
@@ -584,15 +593,16 @@ function Spectrogram(p: SpectrogramProps) {
         tabIndex={0}
         aria-label="Spectrogram"
         onKeyDown={(e) => {
-          const k = e.key.toLowerCase()
-          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-            if (k === 'z') return p.onMode('zoom')
-            if (k === 'h' || k === 'p') return p.onMode('pan')
-            if (k === 'a') return p.onToggleAnnotations()
-            if (k === 's') return p.onTogglePanel('spectrum')
-            if (k === 't') return p.onTogglePanel('time')
+          const a = keyAction(e)
+          if (!a) return
+          e.preventDefault()
+          if (isViewAction(a)) return p.model.apply(a)
+          switch (a.kind) {
+            case 'mode': return p.onMode(a.mode)
+            case 'toggleAnnotations': return p.onToggleAnnotations()
+            case 'togglePanel': return p.onTogglePanel(a.panel)
+            case 'cancelGesture': return viewRef.current?.cancelGesture()
           }
-          if (viewRef.current?.handleKey(e.nativeEvent)) e.preventDefault()
         }}
       >
         {p.loading && <div className="loading-bar" />}

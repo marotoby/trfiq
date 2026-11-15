@@ -47,6 +47,13 @@ shared fixtures in `web/src/wire-fixtures/` keep the two in step.
 The sample window and frequency range visible in the spectrogram, which the Spectrum and Time
 panels analyse. `DetailWindow` in `web/src/geometry.ts`.
 
+**View model**
+The visible region of the spectrogram in texture space, with its zoom history, every
+navigation rule (clamping, zoom, drag-pan, box zoom, keys) and its URL form (`?v=`). The one
+source of truth for what is on screen: the WebGL renderer draws it, and the URL and the detail
+window follow it once it settles. `ViewModel` in `web/src/spectrogram/viewModel.ts`.
+_Avoid_: camera, viewport.
+
 **Recording geometry**
 How one recording, at one FFT size, maps onto the spectrogram's `[0, 1]²` texture space and
 back: texture x ↔ frequency (each column at its FFT bin's centre), texture y ↔ sample index ↔
