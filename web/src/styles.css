@@ -9,9 +9,9 @@
   --fg: #e7e9ee;
   --fg-muted: #8b93a5;
   --fg-faint: #5d6474;
-  --accent: #8b7cff;
-  --accent-2: #22d3ee;
-  --accent-soft: rgba(139, 124, 255, 0.16);
+  --accent: #22d3ee;
+  --accent-2: #38bdf8;
+  --accent-soft: rgba(34, 211, 238, 0.15);
   --ok: #34d399;
   --warn: #fbbf24;
   --bad: #f87171;
@@ -33,8 +33,8 @@
 html, body, #root { margin: 0; height: 100%; }
 body {
   background:
-    radial-gradient(1200px 500px at 10% -10%, rgba(139, 124, 255, 0.07), transparent 60%),
-    radial-gradient(900px 400px at 100% 0%, rgba(34, 211, 238, 0.05), transparent 60%),
+    radial-gradient(1200px 500px at 10% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
+    radial-gradient(900px 400px at 100% 0%, rgba(14, 165, 233, 0.05), transparent 60%),
     var(--bg);
 }
 a { color: inherit; text-decoration: none; }
@@ -118,6 +118,11 @@ select:hover, .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.25
   border-bottom: 1px solid var(--border); background: rgba(10, 11, 15, 0.7); backdrop-filter: blur(10px);
 }
 .brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; letter-spacing: 0.01em; }
+.wordmark { font-size: 17px; font-weight: 800; font-style: italic; letter-spacing: 0.01em; color: #f4f7fb; }
+.wordmark-iq {
+  background: linear-gradient(180deg, #67e8f9, #22d3ee 55%, #0ea5e9); -webkit-background-clip: text; background-clip: text;
+  color: transparent; padding-right: 2px;
+}
 .tagline { color: var(--fg-faint); font-size: 12px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
 
 /* ---- list page ------------------------------------------------------------------------- */
@@ -179,7 +184,7 @@ select:hover, .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.25
   position: absolute; left: 0; right: 0; top: 0; height: 40px;
   border-bottom: 1px solid var(--border); transition: background 0.08s;
 }
-.tr:hover { background: rgba(139, 124, 255, 0.06); }
+.tr:hover { background: rgba(34, 211, 238, 0.05); }
 .tr:focus-visible { outline-offset: -2px; }
 .td { padding: 0 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .row-broken .td { color: var(--fg-muted); }

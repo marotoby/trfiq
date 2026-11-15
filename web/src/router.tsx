@@ -3,7 +3,7 @@ import { WINDOWS, type Status, type WindowFn } from './api'
 import { COLORMAPS, type Colormap } from './spectrogram/colormaps'
 import { RecordingList } from './pages/RecordingList'
 import { Viewer } from './pages/Viewer'
-import { Logo } from './ui'
+import { Logo, Wordmark } from './ui'
 
 const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
 const num = (v: unknown) => {
@@ -19,7 +19,7 @@ const rootRoute = createRootRoute({
       <header className="topbar">
         <Link to="/" search={{}} className="brand">
           <Logo />
-          <span>trfiq</span>
+          <Wordmark />
         </Link>
         <span className="tagline">IQ recording explorer</span>
       </header>

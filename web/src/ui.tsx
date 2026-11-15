@@ -30,18 +30,38 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   )
 }
 
+/** App mark: broadcast arcs over a spectrum peak and a waterfall strip (docs/images/mark.svg). */
 export function Logo() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
       <defs>
-        <linearGradient id="lg" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor="#8b7cff" />
-          <stop offset="1" stopColor="#22d3ee" />
+        <linearGradient id="mk-a" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#22d3ee" stopOpacity="0.35" />
+          <stop offset="1" stopColor="#7dd3fc" />
+        </linearGradient>
+        <linearGradient id="mk-w" x1="0" x2="1">
+          <stop offset="0" stopColor="#1e40af" />
+          <stop offset="0.35" stopColor="#22d3ee" />
+          <stop offset="0.5" stopColor="#facc15" />
+          <stop offset="0.65" stopColor="#22d3ee" />
+          <stop offset="1" stopColor="#1e40af" />
         </linearGradient>
       </defs>
-      <rect width="24" height="24" rx="6" fill="url(#lg)" />
-      <path d="M4 14h2.5l2-6 3 10 3-12 2.5 8H20" fill="none" stroke="#0b0d12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <rect width="32" height="32" rx="8" fill="#050a17" stroke="rgba(34,211,238,0.35)" />
+      <path d="M9.42 21.96A7 7 0 1 1 22.58 21.39" stroke="url(#mk-a)" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+      <path d="M4.25 23.28A12.5 12.5 0 1 1 27.75 22.26" stroke="url(#mk-a)" strokeWidth="2.25" fill="none" strokeLinecap="round" opacity="0.8" />
+      <rect x="3" y="25" width="26" height="3.5" rx="1" fill="url(#mk-w)" />
+      <path d="M3 24.5H11L14 21 16 9 18 21 21 23.5H29" fill="none" stroke="#a5f3fc" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
+  )
+}
+
+/** "T-RF/IQ" wordmark in the brand style (bold italic, IQ in cyan). */
+export function Wordmark() {
+  return (
+    <span className="wordmark" aria-label="T-RF/IQ">
+      T-RF/<span className="wordmark-iq">IQ</span>
+    </span>
   )
 }
 
