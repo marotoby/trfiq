@@ -63,6 +63,8 @@ cd web && bunx playwright test         # needs a running server; TRFIQ_URL, defa
 - Anything that defines a view goes in the URL; personal preferences go in `localStorage`
   (`trfiq.mode`, `trfiq.panels`, `trfiq.listView`).
 - Record decisions that are expensive to change as an ADR in `docs/adr/`.
+- Domain terms (sample window, slot, read plan, recording geometry…) are defined in
+  [`GLOSSARY.md`](../../GLOSSARY.md). Use them, and add new ones there.
 
 ## Regenerating assets
 
