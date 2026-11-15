@@ -2,13 +2,13 @@
 // max-hold) and time-domain I/Q. The server does the reading and maths (capped at ~2M
 // samples per request); the browser only draws a few thousand points.
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { api, type PsdData, type RecordingDetail, type TimeData, type WindowFn } from '../api'
 import type { Annotation } from '../annotations'
-import * as fmt from '../format'
+import { geometry, type DetailWindow, type Geometry } from '../geometry'
 import { Icon, type IconName } from '../ui'
 
 /** Envelope buckets requested for the time plot (≈ one per pixel on a wide screen). */
@@ -100,14 +100,6 @@ function PlotCard(props: {
   )
 }
 
-export interface DetailWindow {
-  start: number
-  count: number
-  /** Visible frequency range (Hz), for the spectrum's x axis. */
-  fLo: number
-  fHi: number
-}
-
 // ---- spectrum ------------------------------------------------------------------------------
 
 export function SpectrumPlot(p: { r: RecordingDetail; win: DetailWindow; fft: number; window: WindowFn }) {
@@ -122,18 +114,22 @@ export function SpectrumPlot(p: { r: RecordingDetail; win: DetailWindow; fft: nu
 
   const range = useRef(win)
   range.current = win
-  const data = usePsdData(q.data, r)
+  // Bins are placed with the PSD's own FFT size, which can differ from the overview's.
+  const geo = useMemo(() => geometry(r, q.data?.fft ?? p.fft), [r, q.data?.fft, p.fft])
+  const g = useRef(geo)
+  g.current = geo
+  const data = usePsdData(q.data, geo)
   const { hostRef, plotRef } = usePlot(
     () => ({
       scales: { x: { time: false } },
       cursor: { drag: { x: true, y: false } },
       legend: { live: true },
       series: [
-        { label: 'Freq', value: (_u, v) => (v == null ? '—' : fmt.hz(v, 9)) },
+        { label: 'Freq', value: (_u, v) => (v == null ? '—' : g.current.formatFreq(v, 9)) },
         { label: 'Mean', stroke: C.mean, width: 1.5, value: dbValue, points: { show: false } },
         { label: 'Max hold', stroke: C.max, width: 1, value: dbValue, points: { show: false } },
       ],
-      axes: [axis((v) => fmt.hz(v, 6), { space: 90 }), axis((v) => `${v}`, { size: 44, label: 'dBFS', labelSize: 14, labelFont: C.font })],
+      axes: [axis((v) => g.current.formatFreq(v, 6), { space: 90 }), axis((v) => `${v}`, { size: 44, label: 'dBFS', labelSize: 14, labelFont: C.font })],
     }),
     data,
     (u) => u.setScale('x', { min: range.current.fLo, max: range.current.fHi }),
@@ -168,14 +164,11 @@ export function SpectrumPlot(p: { r: RecordingDetail; win: DetailWindow; fft: nu
 
 const dbValue = (_u: uPlot, v: number | null) => (v == null ? '—' : `${v.toFixed(1)} dB`)
 
-function usePsdData(d: PsdData | undefined, r: RecordingDetail): uPlot.AlignedData | null {
+function usePsdData(d: PsdData | undefined, geo: Geometry): uPlot.AlignedData | null {
   const cache = useRef<{ d: PsdData; out: uPlot.AlignedData } | null>(null)
   if (!d) return null
   if (cache.current?.d === d) return cache.current.out
-  const sr = r.sample_rate ?? 1
-  const cf = r.center_freq ?? 0
-  const n = d.fft
-  const f = Float64Array.from({ length: n }, (_, k) => cf + ((k - n / 2) * sr) / n)
+  const f = Float64Array.from({ length: d.fft }, (_, k) => geo.binFreq(k))
   const out: uPlot.AlignedData = [f as unknown as number[], d.mean as unknown as number[], d.max as unknown as number[]]
   cache.current = { d, out }
   return out
@@ -185,31 +178,31 @@ function usePsdData(d: PsdData | undefined, r: RecordingDetail): uPlot.AlignedDa
 
 export function TimePlot(p: {
   r: RecordingDetail
+  geo: Geometry
   win: DetailWindow
   /** Annotations to draw (already filtered by label / visibility). */
   annotations: Annotation[]
   selected: number | null
   onSelect: (a: Annotation) => void
 }) {
-  const { r, win } = p
-  const sr = r.sample_rate ?? 1
-  const ann = useRef({ list: p.annotations, selected: p.selected, sr, onSelect: p.onSelect })
-  ann.current = { list: p.annotations, selected: p.selected, sr, onSelect: p.onSelect }
+  const { r, win, geo } = p
+  const ann = useRef({ list: p.annotations, selected: p.selected, geo, onSelect: p.onSelect })
+  ann.current = { list: p.annotations, selected: p.selected, geo, onSelect: p.onSelect }
   const q = useQuery({
     queryKey: ['time', r.id, win.start, win.count],
     queryFn: ({ signal }) => api.time(r.id, { start: win.start, count: win.count, points: TIME_POINTS }, signal),
     staleTime: Infinity,
     placeholderData: keepPreviousData,
   })
-  const data = useTimeData(q.data, r)
+  const data = useTimeData(q.data, geo)
   const { hostRef, plotRef } = usePlot(
     () => ({
       hooks: {
         // Bands under the traces, labels on top of them.
-        drawClear: [(u) => drawAnnotationBands(u, ann.current.list, ann.current.selected, ann.current.sr)],
-        draw: [(u) => drawAnnotationLabels(u, ann.current.list, ann.current.selected, ann.current.sr)],
+        drawClear: [(u) => drawAnnotationBands(u, ann.current.list, ann.current.selected, ann.current.geo)],
+        draw: [(u) => drawAnnotationLabels(u, ann.current.list, ann.current.selected, ann.current.geo)],
         ready: [(u) => clickToSelect(u, (t) => {
-          const a = annotationAt(ann.current.list, t * ann.current.sr)
+          const a = annotationAt(ann.current.list, ann.current.geo.sampleOf(t))
           if (a) ann.current.onSelect(a)
         })],
       },
@@ -217,11 +210,11 @@ export function TimePlot(p: {
       cursor: { drag: { x: true, y: false } },
       legend: { live: true },
       series: [
-        { label: 'Time', value: (_u, v) => (v == null ? '—' : fmt.seconds(v)) },
+        { label: 'Time', value: (_u, v) => (v == null ? '—' : ann.current.geo.formatTime(v)) },
         { label: 'I', stroke: C.i, width: 1, value: ampValue, points: { show: false } },
         { label: 'Q', stroke: C.q, width: 1, value: ampValue, points: { show: false } },
       ],
-      axes: [axis(fmt.seconds, { space: 80 }), axis((v) => `${+v.toFixed(3)}`, { size: 44, space: 24 })],
+      axes: [axis((v) => ann.current.geo.formatTime(v), { space: 80 }), axis((v) => `${+v.toFixed(3)}`, { size: 44, space: 24 })],
     }),
     data,
   )
@@ -243,7 +236,7 @@ export function TimePlot(p: {
       info={
         d && (
           <>
-            {d.count.toLocaleString()} samples · {fmt.seconds(d.count / sr)}
+            {d.count.toLocaleString()} samples · {geo.formatTime(geo.timeOf(d.count))}
             {d.mode !== 'raw' && (
               <span
                 className="badge"
@@ -267,15 +260,14 @@ export function TimePlot(p: {
 
 const ampValue = (_u: uPlot, v: number | null) => (v == null ? '—' : v.toFixed(4))
 
-function useTimeData(d: TimeData | undefined, r: RecordingDetail): uPlot.AlignedData | null {
-  const cache = useRef<{ d: TimeData; out: uPlot.AlignedData } | null>(null)
+function useTimeData(d: TimeData | undefined, geo: Geometry): uPlot.AlignedData | null {
+  const cache = useRef<{ d: TimeData; geo: Geometry; out: uPlot.AlignedData } | null>(null)
   if (!d) return null
-  if (cache.current?.d === d) return cache.current.out
-  const sr = r.sample_rate ?? 1
+  if (cache.current?.d === d && cache.current.geo === geo) return cache.current.out
   let t: Float64Array, i: Float32Array, q: Float32Array
   if (d.mode === 'raw') {
     const n = d.data.length / 2
-    t = Float64Array.from({ length: n }, (_, k) => (d.start + k) / sr)
+    t = Float64Array.from({ length: n }, (_, k) => geo.timeOf(d.start + k))
     i = new Float32Array(n)
     q = new Float32Array(n)
     for (let k = 0; k < n; k++) {
@@ -290,8 +282,8 @@ function useTimeData(d: TimeData | undefined, r: RecordingDetail): uPlot.Aligned
     i = new Float32Array(2 * b)
     q = new Float32Array(2 * b)
     for (let k = 0; k < b; k++) {
-      const t0 = (d.start + (k * d.count) / b) / sr
-      const half = d.count / b / 2 / sr
+      const t0 = geo.timeOf(d.start + (k * d.count) / b)
+      const half = geo.timeOf(d.count / b / 2)
       t[2 * k] = t0
       t[2 * k + 1] = t0 + half
       i[2 * k] = d.data[4 * k]
@@ -301,7 +293,7 @@ function useTimeData(d: TimeData | undefined, r: RecordingDetail): uPlot.Aligned
     }
   }
   const out: uPlot.AlignedData = [t as unknown as number[], i as unknown as number[], q as unknown as number[]]
-  cache.current = { d, out }
+  cache.current = { d, geo, out }
   return out
 }
 
@@ -317,13 +309,13 @@ function annotationAt(list: Annotation[], sample: number): Annotation | null {
 }
 
 /** Visible annotations as canvas x ranges, clipped to the plot area. */
-function bands(u: uPlot, list: Annotation[], sr: number) {
+function bands(u: uPlot, list: Annotation[], geo: Geometry) {
   const { min, max } = u.scales.x
   if (min == null || max == null) return []
   const { left, width } = u.bbox
   return list.flatMap((a) => {
-    const t0 = a.start / sr
-    const t1 = (a.start + a.count) / sr
+    const t0 = geo.timeOf(a.start)
+    const t1 = geo.timeOf(a.start + a.count)
     if (t1 < min || t0 > max) return []
     const x0 = Math.max(left, u.valToPos(t0, 'x', true))
     const x1 = Math.min(left + width, u.valToPos(t1, 'x', true))
@@ -331,11 +323,11 @@ function bands(u: uPlot, list: Annotation[], sr: number) {
   })
 }
 
-function drawAnnotationBands(u: uPlot, list: Annotation[], selected: number | null, sr: number) {
+function drawAnnotationBands(u: uPlot, list: Annotation[], selected: number | null, geo: Geometry) {
   const { ctx, bbox } = u
   const px = devicePixelRatio
   ctx.save()
-  for (const { a, x0, x1 } of bands(u, list, sr)) {
+  for (const { a, x0, x1 } of bands(u, list, geo)) {
     const sel = a.id === selected
     ctx.globalAlpha = sel ? 0.24 : 0.1
     ctx.fillStyle = a.color
@@ -353,7 +345,7 @@ function drawAnnotationBands(u: uPlot, list: Annotation[], selected: number | nu
   ctx.restore()
 }
 
-function drawAnnotationLabels(u: uPlot, list: Annotation[], selected: number | null, sr: number) {
+function drawAnnotationLabels(u: uPlot, list: Annotation[], selected: number | null, geo: Geometry) {
   const { ctx, bbox } = u
   const px = devicePixelRatio
   const h = 15 * px
@@ -363,7 +355,7 @@ function drawAnnotationLabels(u: uPlot, list: Annotation[], selected: number | n
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left' // uPlot leaves whatever its axes used
   // Selected first, so it always gets a slot; others take the first free row or are skipped.
-  const items = bands(u, list, sr).sort((p, q) => Number(q.a.id === selected) - Number(p.a.id === selected) || p.x0 - q.x0)
+  const items = bands(u, list, geo).sort((p, q) => Number(q.a.id === selected) - Number(p.a.id === selected) || p.x0 - q.x0)
   for (const { a, x0 } of items) {
     const w = ctx.measureText(a.label).width + 10 * px
     const x = Math.min(x0, bbox.left + bbox.width - w)

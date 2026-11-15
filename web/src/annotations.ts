@@ -1,6 +1,6 @@
 // SigMF annotations → plot rectangles in [0,1] texture space.
 
-import type { RecordingDetail } from './api'
+import type { Geometry } from './geometry'
 import type { PlotAnnotation } from './spectrogram/SpectrogramView'
 
 export interface Annotation {
@@ -46,20 +46,16 @@ export function parseAnnotations(meta: unknown): Annotation[] {
   })
 }
 
-export function toPlot(a: Annotation, r: RecordingDetail): PlotAnnotation | null {
-  const n = r.num_samples
-  if (!n) return null
-  const cf = r.center_freq ?? 0
-  const sr = r.sample_rate ?? 1
+export function toPlot(a: Annotation, g: Geometry): PlotAnnotation {
   // Missing frequency edges mean "the whole band".
-  const x = (f: number | null, dflt: number) => (f == null ? dflt : (f - cf) / sr + 0.5)
+  const x = (f: number | null, dflt: number) => (f == null ? dflt : g.xAt(f))
   return {
     id: a.id,
     label: a.label,
     color: a.color,
     x0: x(a.fLo, 0),
     x1: x(a.fHi, 1),
-    y0: a.start / n,
-    y1: (a.start + a.count) / n,
+    y0: g.yOf(a.start),
+    y1: g.yOf(a.start + a.count),
   }
 }

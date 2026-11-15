@@ -7,7 +7,8 @@ import { useQuery } from '@tanstack/react-query'
 import { api, type Recording } from '../api'
 import { colormapLut } from './colormaps'
 
-const FFT = 256
+/** FFT size of every thumbnail (its width in pixels). */
+export const THUMB_FFT = 256
 const ROWS = 128
 const LUT = colormapLut('turbo')
 
@@ -49,7 +50,7 @@ export function Thumbnail({ r, className }: { r: Recording; className?: string }
   const seen = useSeen(canvas)
   const q = useQuery({
     queryKey: ['thumb', r.id, r.last_modified, r.size],
-    queryFn: ({ signal }) => api.overview(r.id, { fft: FFT, rows: ROWS, window: 'hann' }, signal),
+    queryFn: ({ signal }) => api.overview(r.id, { fft: THUMB_FFT, rows: ROWS, window: 'hann' }, signal),
     enabled: seen && hasPreview(r),
     staleTime: Infinity,
     gcTime: 10 * 60_000,
@@ -80,7 +81,7 @@ export function Thumbnail({ r, className }: { r: Recording; className?: string }
   const state = q.data ? 'ready' : q.error ? 'error' : 'loading'
   return (
     <div className={`thumb thumb-${state}${className ? ` ${className}` : ''}`}>
-      <canvas ref={canvas} width={FFT} height={ROWS} aria-label={`Waterfall preview of ${r.name}`} />
+      <canvas ref={canvas} width={THUMB_FFT} height={ROWS} aria-label={`Waterfall preview of ${r.name}`} />
       {q.error && <span className="thumb-msg">{q.error.message}</span>}
     </div>
   )

@@ -22,7 +22,7 @@ cd web && bun install && bun run dev   # UI with hot reload on :5173 (proxies /a
 scripts/cargo.sh fmt --all --check
 scripts/cargo.sh clippy --workspace --all-targets -- -D warnings
 scripts/cargo.sh test --workspace
-cd web && bun run typecheck && bun run build
+cd web && bun run typecheck && bun run test && bun run build
 cd web && bunx playwright test         # needs a running server; TRFIQ_URL, default http://127.0.0.1:8080
 ```
 
@@ -31,7 +31,9 @@ cd web && bunx playwright test         # needs a running server; TRFIQ_URL, defa
 | `crates/dsp` unit tests | Datatype decoding, spectra, PSD, envelopes, cancellation |
 | `crates/dsp/tests/golden.rs` | Spectra against numpy/scipy references (`scripts/gen_golden.py`) |
 | `crates/index` | SigMF parsing, scanner grouping and statuses, queries |
-| `crates/server/tests/api.rs` | The HTTP API end to end over a local source |
+| `crates/server/src/samples.rs` | The sample-window reader: window checks, read plans and the detail cap, range reads against a local source, cancellation |
+| `crates/server/tests/api.rs` | Smoke tests of the HTTP API end to end over a local source |
+| `web/src/*.test.ts` (`bun run test`) | Recording geometry: texture space ↔ samples and frequencies, bin centres, units, annotation placement |
 | `web/e2e/app.spec.ts` | Playwright: list, search, hover preview, gallery, viewer, box zoom, annotations, detail plots. Fails on any console error |
 
 ## Layout
@@ -41,8 +43,9 @@ cd web && bunx playwright test         # needs a running server; TRFIQ_URL, defa
 | `crates/dsp` | Decoding, windows, FFT → dB, quantisation, PSD, envelopes |
 | `crates/storage` | Read-only S3 and local sources |
 | `crates/index` | SQLite + FTS5 index and the scanner |
-| `crates/server` | HTTP API, scans, embedded UI, `trfiq` binary |
-| `web/src/pages` | Recording list (table, gallery) and viewer |
+| `crates/server` | HTTP API, the sample-window reader (`samples.rs`), scans, embedded UI, `trfiq` binary |
+| `web/src/geometry.ts` | Recording geometry: every texture-space ↔ sample / frequency conversion and its units |
+| `web/src/pages` | Recording list (table, gallery, folders) and viewer |
 | `web/src/spectrogram` | WebGL2 spectrogram, colormaps, thumbnails |
 | `web/src/plots` | uPlot Spectrum and Time panels |
 | `deploy/` | Dockerfile, compose demo stack, configs |

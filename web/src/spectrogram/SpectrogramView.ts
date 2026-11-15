@@ -7,7 +7,8 @@
 // (max-hold) so short bursts never disappear between pixels.
 
 import { colormapLut, type Colormap } from './colormaps'
-import { hz, seconds, ticks } from '../format'
+import { ticks } from '../format'
+import type { Geometry } from '../geometry'
 
 export interface View {
   /** Visible part of the data in [0, 1] texture space. x = frequency, y = time (0 = start). */
@@ -15,13 +16,6 @@ export interface View {
   x1: number
   y0: number
   y1: number
-}
-
-export interface Axes {
-  centerFreq: number
-  sampleRate: number
-  /** Total duration in seconds; y ∈ [0, 1] maps linearly onto it. */
-  duration: number
 }
 
 export interface CursorInfo {
@@ -123,7 +117,7 @@ export class SpectrogramView {
   private db = { lo: -120, hi: 0 }
   private view: View = { ...FULL_VIEW }
   private history: View[] = []
-  private axes: Axes | null = null
+  private geo: Geometry | null = null
   private mode: Mode = 'zoom'
   private annotations: PlotAnnotation[] = []
   private showAnnotations = true
@@ -223,8 +217,9 @@ export class SpectrogramView {
     this.invalidate()
   }
 
-  setAxes(a: Axes) {
-    this.axes = a
+  /** Units for the axes, cursor readout and box-zoom pill. */
+  setGeometry(g: Geometry) {
+    this.geo = g
     this.invalidate()
   }
 
@@ -501,7 +496,7 @@ export class SpectrogramView {
   }
 
   private emitCursor() {
-    if (!this.onCursor || !this.cursor || !this.axes) return
+    if (!this.onCursor || !this.cursor || !this.geo) return
     const t = this.toTex(this.cursor)
     let db: number | null = null
     if (this.data && this.w) {
@@ -510,15 +505,11 @@ export class SpectrogramView {
       db = this.quant.dbMin + this.data[iy * this.w + ix] * this.quant.dbStep
     }
     this.onCursor({
-      freq: this.freqAt(t.x),
-      time: t.y * this.axes.duration,
+      freq: this.geo.freqAt(t.x),
+      time: this.geo.timeAt(t.y),
       db,
       annotation: this.annotationAt(this.cursor)?.label ?? null,
     })
-  }
-
-  private freqAt(x: number) {
-    return this.axes ? this.axes.centerFreq + (x - 0.5) * this.axes.sampleRate : 0
   }
 
   // ---- rendering --------------------------------------------------------------------------
@@ -588,11 +579,11 @@ export class SpectrogramView {
     ctx.font = `11px ${mono}`
     ctx.lineWidth = 1
 
-    if (this.axes) {
-      const { duration } = this.axes
+    const geo = this.geo
+    if (geo) {
       // Frequency axis (bottom).
-      const f0 = this.freqAt(v.x0)
-      const f1 = this.freqAt(v.x1)
+      const f0 = geo.freqAt(v.x0)
+      const f1 = geo.freqAt(v.x1)
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
       for (const f of ticks(f0, f1, Math.max(2, Math.floor(w / 120)))) {
@@ -603,11 +594,11 @@ export class SpectrogramView {
         ctx.lineTo(x, T + h)
         ctx.stroke()
         ctx.fillStyle = muted
-        ctx.fillText(hz(f, 7), x, T + h + 8)
+        ctx.fillText(geo.formatFreq(f, 7), x, T + h + 8)
       }
       // Time axis (left).
-      const t0 = v.y0 * duration
-      const t1 = v.y1 * duration
+      const t0 = geo.timeAt(v.y0)
+      const t1 = geo.timeAt(v.y1)
       ctx.textAlign = 'right'
       ctx.textBaseline = 'middle'
       for (const t of ticks(t0, t1, Math.max(2, Math.floor(h / 64)))) {
@@ -618,7 +609,7 @@ export class SpectrogramView {
         ctx.lineTo(L + w, y)
         ctx.stroke()
         ctx.fillStyle = muted
-        ctx.fillText(seconds(t), L - 8, y)
+        ctx.fillText(geo.formatTime(t), L - 8, y)
       }
     }
 
@@ -641,10 +632,13 @@ export class SpectrogramView {
       ctx.setLineDash([5, 4])
       ctx.strokeRect(Math.round(x0) + 0.5, Math.round(y0) + 0.5, Math.round(bw), Math.round(bh))
       ctx.setLineDash([])
-      if (this.axes && (bw > 30 || bh > 30)) {
-        const df = Math.abs(g.x1 - g.x0) * (v.x1 - v.x0) * this.axes.sampleRate
-        const dt = Math.abs(g.y1 - g.y0) * (v.y1 - v.y0) * this.axes.duration
-        this.pill(`Δf ${hz(df, 4)}   Δt ${seconds(dt)}`, x0 + 6, y0 + 6, 'rgba(15,17,23,0.85)', '#fff')
+      if (geo && (bw > 30 || bh > 30)) {
+        // Box corners in texture space.
+        const tx = (s: number) => v.x0 + s * (v.x1 - v.x0)
+        const ty = (s: number) => v.y0 + s * (v.y1 - v.y0)
+        const df = Math.abs(geo.freqAt(tx(g.x1)) - geo.freqAt(tx(g.x0)))
+        const dt = Math.abs(geo.timeAt(ty(g.y1)) - geo.timeAt(ty(g.y0)))
+        this.pill(`Δf ${geo.formatFreq(df, 4)}   Δt ${geo.formatTime(dt)}`, x0 + 6, y0 + 6, 'rgba(15,17,23,0.85)', '#fff')
       }
     } else if (this.cursor && !g) {
       ctx.strokeStyle = 'rgba(255,255,255,0.35)'

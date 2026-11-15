@@ -13,8 +13,9 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { api, type Recording, type SourceInfo, type Status } from '../api'
 import { labelColor } from '../annotations'
 import * as fmt from '../format'
+import { geometry } from '../geometry'
 import type { ListSearch, ListView } from '../router'
-import { Thumbnail, hasPreview } from '../spectrogram/Thumbnail'
+import { THUMB_FFT, Thumbnail, hasPreview } from '../spectrogram/Thumbnail'
 import { FolderView } from './FolderView'
 import { Icon, IconButton, Segmented } from '../ui'
 
@@ -294,25 +295,25 @@ function RecordingTable({ data, emptyText = 'No recordings match.' }: { data: Re
 }
 
 function PreviewPopover({ r, popRef }: { r: Recording; popRef: RefObject<HTMLDivElement | null> }) {
-  const sr = r.sample_rate
-  const cf = r.center_freq
+  const g = geometry(r, THUMB_FFT)
+  const end = g.formatTime(g.duration)
   return (
     <div className="preview-pop" ref={popRef} role="tooltip">
       <div className="preview-head">
         <strong>{splitStem(r.stem).name}</strong>
-        <span className="muted">{fmt.seconds(fmt.duration(r))}</span>
+        <span className="muted">{end}</span>
       </div>
       <div className="preview-plot">
         <Thumbnail r={r} />
-        <span className="preview-t0">0 s</span>
-        <span className="preview-t1">{fmt.seconds(fmt.duration(r))}</span>
+        <span className="preview-t0">{g.formatTime(0)}</span>
+        <span className="preview-t1">{end}</span>
       </div>
       <div className="preview-axis">
-        {sr && cf != null ? (
+        {r.sample_rate && r.center_freq != null ? (
           <>
-            <span>{fmt.hz(cf - sr / 2)}</span>
-            <span>{fmt.hz(cf)}</span>
-            <span>{fmt.hz(cf + sr / 2)}</span>
+            {[0, 0.5, 1].map((x) => (
+              <span key={x}>{g.formatFreq(g.freqAt(x))}</span>
+            ))}
           </>
         ) : (
           <span className="muted">Frequency axis needs sample rate and center frequency</span>

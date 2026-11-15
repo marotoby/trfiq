@@ -239,7 +239,7 @@ cd web && bun install && bun run dev   # UI with hot reload on :5173 (proxies /a
 scripts/cargo.sh fmt --all --check
 scripts/cargo.sh clippy --workspace --all-targets -- -D warnings
 scripts/cargo.sh test --workspace      # unit, numpy golden, index/scanner, HTTP API
-cd web && bun run typecheck && bun run build
+cd web && bun run typecheck && bun run test && bun run build   # types, unit tests, bundle
 cd web && bunx playwright test         # e2e against a running server (TRFIQ_URL, default :8080)
 ```
 

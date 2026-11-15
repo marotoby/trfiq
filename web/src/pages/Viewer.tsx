@@ -4,8 +4,9 @@ import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { WINDOWS, api, type Overview, type RecordingDetail, type WindowFn } from '../api'
 import { parseAnnotations, toPlot, type Annotation } from '../annotations'
 import * as fmt from '../format'
+import { geometry, type Geometry } from '../geometry'
 import { COLORMAPS, colormapStops, type Colormap } from '../spectrogram/colormaps'
-import { SpectrumPlot, TimePlot, type DetailWindow } from '../plots/DetailPlots'
+import { SpectrumPlot, TimePlot } from '../plots/DetailPlots'
 import {
   FULL_VIEW,
   SpectrogramView,
@@ -110,14 +111,14 @@ export function Viewer() {
   const setSearch = (patch: Partial<typeof search>) =>
     navigate({ search: (s) => ({ ...s, ...patch }), replace: true })
 
+  // Follows the FFT size of the overview on screen (the previous one while a new one loads).
+  const shownFft = overview.data?.fft ?? fft
+  const geo = useMemo(() => (rec.data ? geometry(rec.data, shownFft) : null), [rec.data, shownFft])
   const annotations = useMemo(() => parseAnnotations(rec.data?.meta), [rec.data])
   const plotAnnotations = useMemo(() => {
-    if (!rec.data) return []
-    return annotations
-      .filter((a) => !hiddenLabels.has(a.label))
-      .map((a) => toPlot(a, rec.data))
-      .filter((a): a is PlotAnnotation => a != null)
-  }, [annotations, hiddenLabels, rec.data])
+    if (!geo) return []
+    return annotations.filter((a) => !hiddenLabels.has(a.label)).map((a) => toPlot(a, geo))
+  }, [annotations, hiddenLabels, geo])
 
   const listedAnnotations = useMemo(
     () => (showAnn ? annotations.filter((a) => !hiddenLabels.has(a.label)) : NO_ANNOTATIONS),
@@ -126,13 +127,12 @@ export function Viewer() {
 
   const selectAnnotation = (a: Annotation | null, zoom: boolean) => {
     setSelected(a?.id ?? null)
-    if (!a || !zoom || !rec.data) return
-    const p = toPlot(a, rec.data)
-    if (p) viewRef.current?.zoomTo(p)
+    if (!a || !zoom || !geo) return
+    viewRef.current?.zoomTo(toPlot(a, geo))
   }
 
   if (rec.error) return <div className="error page">Failed to load recording: {rec.error.message}</div>
-  if (!rec.data) return <div className="page muted">Loading…</div>
+  if (!rec.data || !geo) return <div className="page muted">Loading…</div>
   const r = rec.data
   const folder = r.stem.includes('/') ? r.stem.slice(0, r.stem.lastIndexOf('/')) : ''
 
@@ -237,7 +237,7 @@ export function Viewer() {
           ) : (
             <Spectrogram
               viewRef={viewRef}
-              r={r}
+              geo={geo}
               overview={overview.data}
               loading={overview.isFetching}
               cmap={cmap}
@@ -266,6 +266,7 @@ export function Viewer() {
         {viewable && (panels.spectrum || panels.time) && (
           <DetailRow
             r={r}
+            geo={geo}
             v={search.v}
             fft={fft}
             windowFn={windowFn}
@@ -280,7 +281,7 @@ export function Viewer() {
         <aside className="side">
           <Details r={r} />
           <AnnotationPanel
-            r={r}
+            geo={geo}
             annotations={annotations}
             show={showAnn}
             onToggleShow={() => setShowAnn((s) => !s)}
@@ -308,6 +309,7 @@ const NO_ANNOTATIONS: Annotation[] = []
 
 function DetailRow(p: {
   r: RecordingDetail
+  geo: Geometry
   v?: string
   fft: number
   windowFn: WindowFn
@@ -316,29 +318,14 @@ function DetailRow(p: {
   selected: number | null
   onSelect: (a: Annotation) => void
 }) {
-  const { r, v } = p
+  const { r, v, geo } = p
   // Driven by the (debounced) view in the URL, so panning doesn't flood the server.
-  const win = useMemo<DetailWindow>(() => {
-    const view = parseView(v) ?? FULL_VIEW
-    const n = r.num_samples ?? 1
-    const sr = r.sample_rate ?? 1
-    const cf = r.center_freq ?? 0
-    const clamp = (x: number) => Math.min(1, Math.max(0, x))
-    const y0 = clamp(Math.min(view.y0, view.y1))
-    const y1 = clamp(Math.max(view.y0, view.y1))
-    const start = Math.min(Math.floor(y0 * n), n - 1)
-    return {
-      start,
-      count: Math.max(1, Math.min(n - start, Math.ceil((y1 - y0) * n))),
-      fLo: cf + (view.x0 - 0.5) * sr,
-      fHi: cf + (view.x1 - 0.5) * sr,
-    }
-  }, [v, r])
+  const win = useMemo(() => geo.window(parseView(v) ?? FULL_VIEW), [v, geo])
   return (
     <div className={`detail-row${p.panels.spectrum && p.panels.time ? ' two' : ''}`}>
       {p.panels.spectrum && <SpectrumPlot r={r} win={win} fft={p.fft} window={p.windowFn} />}
       {p.panels.time && (
-        <TimePlot r={r} win={win} annotations={p.annotations} selected={p.selected} onSelect={p.onSelect} />
+        <TimePlot r={r} geo={geo} win={win} annotations={p.annotations} selected={p.selected} onSelect={p.onSelect} />
       )}
     </div>
   )
@@ -410,7 +397,7 @@ function Details({ r }: { r: RecordingDetail }) {
 }
 
 function AnnotationPanel(props: {
-  r: RecordingDetail
+  geo: Geometry
   annotations: Annotation[]
   show: boolean
   onToggleShow: () => void
@@ -433,7 +420,7 @@ function AnnotationPanel(props: {
     listRef.current?.querySelector(`[data-id="${selected}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [selected])
 
-  const sr = props.r.sample_rate ?? 1
+  const { geo } = props
   const visible = annotations.filter((a) => !props.hiddenLabels.has(a.label))
   const LIMIT = 500
 
@@ -481,8 +468,8 @@ function AnnotationPanel(props: {
                 >
                   <span className="ann-label">{a.label}</span>
                   <span className="ann-meta">
-                    {fmt.seconds(a.start / sr)} · {fmt.seconds(a.count / sr)}
-                    {a.fLo != null && a.fHi != null && <> · {fmt.hz(a.fHi - a.fLo, 4)} wide</>}
+                    {geo.formatTime(geo.timeOf(a.start))} · {geo.formatTime(geo.timeOf(a.count))}
+                    {a.fLo != null && a.fHi != null && <> · {geo.formatFreq(a.fHi - a.fLo, 4)} wide</>}
                   </span>
                   {a.comment && <span className="ann-comment">{a.comment}</span>}
                 </button>
@@ -500,7 +487,7 @@ function AnnotationPanel(props: {
 
 interface SpectrogramProps {
   viewRef: RefObject<SpectrogramView | null>
-  r: RecordingDetail
+  geo: Geometry
   overview: Overview | undefined
   loading: boolean
   cmap: Colormap
@@ -553,8 +540,9 @@ function Spectrogram(p: SpectrogramProps) {
     // Cursor readout is written straight to the DOM: no React render per mouse move.
     view.onCursor = (c: CursorInfo | null) => {
       const set = (el: HTMLSpanElement | null, s: string) => el && (el.textContent = s)
-      set(readout.freq.current, c ? fmt.hz(c.freq, 9) : '')
-      set(readout.time.current, c ? fmt.seconds(c.time) : '')
+      const g = cb.current.geo
+      set(readout.freq.current, c ? g.formatFreq(c.freq, 9) : '')
+      set(readout.time.current, c ? g.formatTime(c.time) : '')
       set(readout.db.current, c?.db != null ? `${c.db.toFixed(1)} dB` : '')
       set(readout.ann.current, c?.annotation ?? '')
       readout.ann.current?.classList.toggle('visible', !!c?.annotation)
@@ -578,14 +566,8 @@ function Spectrogram(p: SpectrogramProps) {
     }
   }, [p.overview, p.viewRef])
 
-  const { r, viewRef } = p
-  useEffect(() => {
-    viewRef.current?.setAxes({
-      centerFreq: r.center_freq ?? 0,
-      sampleRate: r.sample_rate ?? 1,
-      duration: (r.num_samples ?? 0) / (r.sample_rate ?? 1),
-    })
-  }, [r, viewRef])
+  const { geo, viewRef } = p
+  useEffect(() => viewRef.current?.setGeometry(geo), [geo, viewRef])
   useEffect(() => viewRef.current?.setColormap(p.cmap), [p.cmap, viewRef])
   useEffect(() => viewRef.current?.setDbRange(p.lo, p.hi), [p.lo, p.hi, viewRef])
   useEffect(() => viewRef.current?.setMode(p.mode), [p.mode, viewRef])
@@ -627,7 +609,7 @@ function Spectrogram(p: SpectrogramProps) {
           {p.overview && (
             <>
               {p.overview.mode} overview · {p.overview.rows}×{p.overview.fft}
-              {timing && <> · read {timing[1]} ms · fft {timing[2]} ms</>}
+              {timing && <> · read {timing[1]} ms · compute {timing[2]} ms</>}
             </>
           )}
         </span>
