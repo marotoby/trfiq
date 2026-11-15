@@ -58,7 +58,7 @@ responsive even on 100 GB files.
 | **Spectrogram** | FFT 256 to 16384, Hann / Blackman-Harris / rectangular windows, turbo / viridis / gray colormaps, max-hold downsampling so short bursts never vanish when zoomed out |
 | **Spectrum & time plots** | For whatever time range is on screen: power spectrum (mean + max hold) and I/Q over time. Raw samples when zoomed in, a min/max envelope when zoomed out, so peaks never disappear |
 | **Navigation** | Box zoom with live Δf/Δt, wheel zoom per axis, drag to pan, zoom history, keyboard control |
-| **Annotations** | SigMF annotations drawn as labelled boxes; a side panel to filter by label and click to zoom |
+| **Annotations** | SigMF annotations drawn as labelled boxes on the spectrogram and as bands on the time plot; a side panel to filter by label and click to zoom |
 | **Shareable** | Every view (file, FFT, colormap, levels, zoom) lives in the URL, so a link reproduces it exactly |
 | **Operations** | One 44 MB distroless non-root image, `/healthz` and `/readyz`, JSON logs, per-source scan status in the UI |
 
@@ -200,6 +200,8 @@ Measured on the demo stack (S3 on localhost):
 | First overview of a file (1024 × 1024) | < 2 s | 16 to 32 ms end to end from S3 |
 | Colormap / levels change | instant | no request, shader only |
 | Incremental rescan, unchanged bucket | | a few ms (metadata is not re-read) |
+| Spectrum / time plots of a 2M-sample window | | ~15 ms (read + compute) |
+| Waterfall thumbnail (256 × 128) | | a few ms; only for cards on screen |
 
 The 100 GB load test is on the roadmap.
 
@@ -261,8 +263,9 @@ uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/pack
 - [x] S3 + local sources, incremental SQLite/FTS5 index, search and filter API
 - [x] Server-side overview with cancellation; WebGL2 spectrogram with max-hold downsampling
 - [x] Box zoom, zoom history, keyboard navigation, deep links
-- [x] SigMF annotation overlay and panel
+- [x] SigMF annotation overlay and panel; annotations on the time plot
 - [x] Spectrum (mean + max hold) and time-domain I/Q of the visible window
+- [x] Table and gallery views with waterfall previews
 - [x] Distroless image, compose demo stack, numpy golden tests, Playwright e2e, CI
 - [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading
 - [ ] Background max-hold pyramid and an LRU disk tile cache

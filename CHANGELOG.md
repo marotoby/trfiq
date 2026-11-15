@@ -2,6 +2,11 @@
 
 ### Feat
 
+- **web**: gallery view and waterfall preview on hover
+- **web**: show annotations on the time plot
+- **web**: spectrum and time plots for the visible window
+- **api**: spectrum and time-domain endpoints for a sample window
+- **web**: T-RF/IQ branding with logo, favicon and cyan accent
 - **samples**: generate demo recordings including an annotated 433 MHz band
 - **web**: recording browser and WebGL2 spectrogram viewer
 - **server**: HTTP API with strided overview, health checks and embedded UI
