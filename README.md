@@ -273,14 +273,14 @@ uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/pack
 - [x] Spectrum (mean + max hold) and time-domain I/Q of the visible window
 - [x] Table, gallery and folders views with waterfall previews
 - [x] Distroless image, compose demo stack, numpy golden tests, Playwright e2e, CI
-- [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading
-- [ ] Background max-hold pyramid and an LRU disk tile cache
-- [ ] Constellation plot; band-limit the time plot to the visible frequency range
-- [ ] Metadata entry for raw files (stored in the index), with JSON export/import
-- [ ] Frequency and date filters in the UI (the API already supports them)
-- [ ] Prometheus `/metrics`
-- [ ] Byte-plane shuffle before compression
-- [ ] 100 GB synthetic-file load test against the performance budgets
+- [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading ([#1](https://github.com/marotoby/trfiq/issues/1))
+- [ ] Background max-hold pyramid and an LRU disk tile cache ([#2](https://github.com/marotoby/trfiq/issues/2))
+- [ ] Constellation plot ([#3](https://github.com/marotoby/trfiq/issues/3)); band-limit the time plot to the visible frequency range ([#4](https://github.com/marotoby/trfiq/issues/4))
+- [ ] Metadata entry for raw files (stored in the index), with JSON export/import ([#5](https://github.com/marotoby/trfiq/issues/5))
+- [ ] Frequency and date filters in the UI (the API already supports them) ([#6](https://github.com/marotoby/trfiq/issues/6))
+- [ ] Prometheus `/metrics` ([#7](https://github.com/marotoby/trfiq/issues/7))
+- [ ] Byte-plane shuffle before compression ([#8](https://github.com/marotoby/trfiq/issues/8))
+- [ ] 100 GB synthetic-file load test against the performance budgets ([#9](https://github.com/marotoby/trfiq/issues/9))
 
 ---
 
