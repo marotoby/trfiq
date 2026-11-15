@@ -15,7 +15,7 @@ import { labelColor } from '../annotations'
 import * as fmt from '../format'
 import { geometry } from '../geometry'
 import type { ListSearch, ListView } from '../router'
-import { THUMB_FFT, Thumbnail, hasPreview } from '../spectrogram/Thumbnail'
+import { THUMB_FFT, Thumbnail } from '../spectrogram/Thumbnail'
 import { FolderView } from './FolderView'
 import { Icon, IconButton, Segmented } from '../ui'
 
@@ -237,7 +237,7 @@ function RecordingTable({ data, emptyText = 'No recordings match.' }: { data: Re
   const hover = (r: Recording | null, e?: MouseEvent) => {
     clearTimeout(timer.current)
     if (e) pointer.current = { x: e.clientX, y: e.clientY }
-    if (!r || !hasPreview(r)) return setPreview(null)
+    if (!r || !r.viewable) return setPreview(null)
     timer.current = setTimeout(() => setPreview(r), 300)
   }
 
@@ -372,7 +372,7 @@ function GalleryCard({ r }: { r: Recording }) {
   return (
     <Link to="/r/$id" params={{ id: String(r.id) }} search={{}} className={`gcard row-${r.status}`} title={r.stem}>
       <div className="gcard-thumb">
-        {hasPreview(r) ? (
+        {r.viewable ? (
           <Thumbnail r={r} />
         ) : (
           <div className="thumb-empty">
@@ -381,7 +381,7 @@ function GalleryCard({ r }: { r: Recording }) {
               <span className="dot" />
               {STATUS_TEXT[r.status]}
             </span>
-            {r.error && <small>{r.error}</small>}
+            {r.not_viewable_reason && <small>{r.not_viewable_reason}</small>}
           </div>
         )}
         <span className="pill gcard-source">{r.source}</span>

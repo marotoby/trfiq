@@ -25,6 +25,10 @@ export interface Recording {
   annotation_count: number
   user_meta: boolean
   num_samples: number | null
+  /** Decided by the index: whether the samples can be read and drawn. */
+  viewable: boolean
+  /** Why not, when `viewable` is false. */
+  not_viewable_reason: string | null
 }
 
 export interface RecordingDetail extends Recording {

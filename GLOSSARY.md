@@ -7,6 +7,12 @@ with these meanings.
 A data object plus its metadata (usually a SigMF `.sigmf-data` / `.sigmf-meta` pair) in a
 source. Its samples are indexed `0 … N−1`.
 
+**Viewable**
+A recording whose samples can be read and drawn: not broken, with a data file, a supported
+datatype and at least one sample. Decided once, by the index (`viewability` in
+`crates/index/src/db.rs`), and exposed as `viewable` / `not_viewable_reason`. The sample
+endpoints, the viewer, previews and the gallery all go by it.
+
 **Sample window**
 A non-empty range `[start, start + count)` of one recording's samples. Requests name one with
 `start` and `count`; a window that runs past the end is trimmed, one that starts past it is an

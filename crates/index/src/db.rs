@@ -142,6 +142,35 @@ pub struct Recording {
     pub user_meta: bool,
     /// Derived from size and datatype.
     pub num_samples: Option<u64>,
+    /// Whether its samples can be read and drawn. The one place this is decided: the server's
+    /// sample endpoints and the UI (viewer, previews, gallery) all go by it.
+    pub viewable: bool,
+    /// Why it can't be drawn, when `viewable` is false.
+    pub not_viewable_reason: Option<String>,
+}
+
+/// Can a recording's samples be read and drawn? `Err` says why not, in words for the UI.
+pub fn viewability(
+    status: Status,
+    error: Option<&str>,
+    data_key: Option<&str>,
+    datatype: Option<&str>,
+    num_samples: Option<u64>,
+) -> Result<(), String> {
+    if status == Status::Broken {
+        return Err(error.unwrap_or("recording is broken").to_owned());
+    }
+    if data_key.is_none() {
+        return Err("no data file".into());
+    }
+    let Some(dt) = datatype else {
+        return Err("needs a datatype before it can be shown".into());
+    };
+    Datatype::parse(dt).map_err(|e| e.to_string())?;
+    match num_samples {
+        Some(n) if n > 0 => Ok(()),
+        _ => Err("empty recording".into()),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -386,17 +415,28 @@ fn row_to_recording(r: &Row) -> rusqlite::Result<Recording> {
         (Some(s), Some(Ok(d))) => Some(s / d.sample_size() as u64),
         _ => None,
     };
+    let status = Status::parse(&r.get::<_, String>("status")?);
+    let error: Option<String> = r.get("error")?;
+    let data_key: Option<String> = r.get("data_key")?;
+    let not_viewable_reason = viewability(
+        status,
+        error.as_deref(),
+        data_key.as_deref(),
+        datatype.as_deref(),
+        num_samples,
+    )
+    .err();
     Ok(Recording {
         id: r.get("id")?,
         source: r.get("source")?,
         stem: r.get("stem")?,
         name: r.get("name")?,
-        data_key: r.get("data_key")?,
+        data_key,
         meta_key: r.get("meta_key")?,
         size,
         last_modified: r.get("last_modified")?,
-        status: Status::parse(&r.get::<_, String>("status")?),
-        error: r.get("error")?,
+        status,
+        error,
         datatype,
         sample_rate: r.get("sample_rate")?,
         center_freq: r.get("center_freq")?,
@@ -412,6 +452,8 @@ fn row_to_recording(r: &Row) -> rusqlite::Result<Recording> {
         annotation_count: r.get::<_, i64>("annotation_count")? as u64,
         user_meta: r.get("user_meta")?,
         num_samples,
+        viewable: not_viewable_reason.is_none(),
+        not_viewable_reason,
     })
 }
 
@@ -457,6 +499,23 @@ mod tests {
     }
 
     #[test]
+    fn viewability_has_one_answer_and_a_reason() {
+        let ok = |s, e, k, d, n| viewability(s, e, k, d, n);
+        let key = Some("x.sigmf-data");
+        assert_eq!(ok(Status::Ok, None, key, Some("ci16_le"), Some(10)), Ok(()));
+        // Raw files with a guessed datatype are viewable too.
+        assert_eq!(ok(Status::NeedsMeta, None, key, Some("cu8"), Some(10)), Ok(()));
+        assert_eq!(
+            ok(Status::Broken, Some("no .sigmf-meta"), key, Some("cu8"), Some(10)),
+            Err("no .sigmf-meta".into())
+        );
+        assert!(ok(Status::Ok, None, None, Some("cu8"), Some(10)).is_err());
+        assert!(ok(Status::NeedsMeta, None, key, None, None).is_err());
+        assert!(ok(Status::Ok, None, key, Some("ci13_le"), Some(10)).is_err());
+        assert!(ok(Status::Ok, None, key, Some("cu8"), Some(0)).is_err());
+    }
+
+    #[test]
     fn upsert_search_filter_delete() {
         let idx = Index::open_in_memory().unwrap();
         idx.apply(
@@ -472,6 +531,7 @@ mod tests {
         let all = idx.list(&ListQuery::default()).unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].num_samples, Some(1000));
+        assert!(all[0].viewable && all[0].not_viewable_reason.is_none());
 
         let q = |q: ListQuery| {
             idx.list(&q)

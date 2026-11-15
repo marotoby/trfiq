@@ -10,7 +10,7 @@ use serde_json::json;
 use tower_http::compression::CompressionLayer;
 use tower_http::trace::TraceLayer;
 use trfiq_dsp::{Datatype, Spectrogram, Window, quant, timeseries};
-use trfiq_index::{ListQuery, Recording, RecordingDetail, Status};
+use trfiq_index::{ListQuery, Recording, RecordingDetail};
 
 use crate::samples::{Coverage, ReadPlan, SampleReader, SampleWindow};
 use crate::state::AppState;
@@ -147,22 +147,14 @@ async fn detail(State(st): St, Path(id): Path<i64>) -> ApiResult<Json<RecordingD
 /// The sample reader for a viewable recording, or why it can't be read.
 async fn open_reader(st: &AppState, id: i64) -> ApiResult<SampleReader> {
     let rec = get_recording(st, id).await?.recording;
-    let unprocessable = |m: String| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, m);
-    if rec.status == Status::Broken {
-        return Err(unprocessable(
-            rec.error.unwrap_or_else(|| "recording is broken".into()),
-        ));
-    }
-    let (Some(key), Some(dt)) = (rec.data_key, rec.datatype) else {
-        return Err(unprocessable(
-            "recording has no data or datatype yet".into(),
-        ));
+    // The index decides what is viewable (`trfiq_index::viewability`); everything else follows.
+    let (true, Some(key), Some(dt), Some(num_samples)) =
+        (rec.viewable, rec.data_key, rec.datatype, rec.num_samples)
+    else {
+        let why = rec.not_viewable_reason.unwrap_or_else(|| "not viewable".into());
+        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, why));
     };
-    let dt = Datatype::parse(&dt).map_err(|e| unprocessable(e.to_string()))?;
-    let num_samples = rec
-        .num_samples
-        .filter(|&n| n > 0)
-        .ok_or_else(|| unprocessable("empty recording".into()))?;
+    let dt = Datatype::parse(&dt).map_err(|e| anyhow::anyhow!(e))?;
     let src = st.source(&rec.source).cloned().ok_or_else(|| {
         ApiError::new(
             StatusCode::NOT_FOUND,

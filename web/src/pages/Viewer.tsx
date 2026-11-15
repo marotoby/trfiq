@@ -92,7 +92,7 @@ export function Viewer() {
     queryKey: ['recording', id],
     queryFn: ({ signal }) => api.recording(id, signal),
   })
-  const viewable = !!rec.data?.datatype && rec.data.status !== 'broken'
+  const viewable = !!rec.data?.viewable
 
   const overview = useQuery({
     queryKey: ['overview', id, fft, windowFn, ROWS],
@@ -227,9 +227,8 @@ export function Viewer() {
             <div className="empty-state">
               <Icon name="file" size={28} />
               <p>
-                {r.status === 'broken'
-                  ? <>This recording is broken: <strong className="error-text">{r.error}</strong></>
-                  : 'This raw file needs a datatype and sample rate before it can be shown.'}
+                {r.status === 'broken' ? 'This recording is broken: ' : 'This recording can\'t be shown: '}
+                <strong className="error-text">{r.not_viewable_reason}</strong>
               </p>
             </div>
           ) : overview.error ? (

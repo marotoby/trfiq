@@ -12,11 +12,6 @@ export const THUMB_FFT = 256
 const ROWS = 128
 const LUT = colormapLut('turbo')
 
-/** Whether a recording has enough metadata to draw (raw files with a guessed datatype do). */
-export function hasPreview(r: Recording): boolean {
-  return r.status !== 'broken' && !!r.datatype && !!r.num_samples
-}
-
 /**
  * Display range for a thumbnail. Darker than the viewer's: black at the median (≈ the noise
  * floor) so signals stand out at a glance.
@@ -51,7 +46,7 @@ export function Thumbnail({ r, className }: { r: Recording; className?: string }
   const q = useQuery({
     queryKey: ['thumb', r.id, r.last_modified, r.size],
     queryFn: ({ signal }) => api.overview(r.id, { fft: THUMB_FFT, rows: ROWS, window: 'hann' }, signal),
-    enabled: seen && hasPreview(r),
+    enabled: seen && r.viewable,
     staleTime: Infinity,
     gcTime: 10 * 60_000,
   })

@@ -49,7 +49,9 @@ curl 'http://localhost:8080/api/recordings?q=lora&status=ok&fmin=433e6&fmax=435e
 
 Each item has `id, source, stem, name, data_key, meta_key, size, last_modified, status, error,
 datatype, sample_rate, center_freq, datetime, description, author, hw, labels,
-annotation_count, num_samples`.
+annotation_count, num_samples, viewable, not_viewable_reason`. `viewable` says whether the
+sample endpoints below can read the recording; when it is `false` they answer `422` with
+`not_viewable_reason`.
 
 ### `GET /api/recordings/{id}`
 
