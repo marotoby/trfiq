@@ -204,7 +204,8 @@ struct OverviewParams {
     window: Option<Window>,
 }
 
-/// Overview of a whole recording (ADR 0003): one FFT per row, rows spread over the file.
+/// Overview of a whole recording (ADR 0003): one FFT per row, each centred in an equal slot
+/// of the recording (ADR 0006).
 /// Body: `rows × fft` little-endian `u16`, quantised dB, fftshifted, row-major.
 async fn overview(
     State(st): St,
@@ -222,7 +223,6 @@ async fn overview(
         ));
     }
     let plan = ReadPlan::overview(reader.num_samples(), rows as u64, fft as u64);
-    let last_offset = plan.slots().last().map_or(0, |r| r.start);
     let t = reader
         .run(&plan, move |chunks, cancel| spec.rows(chunks, cancel))
         .await?;
@@ -237,8 +237,6 @@ async fn overview(
             ("x-trfiq-mode", "strided".into()),
             ("x-trfiq-db-min", quant::DB_MIN.to_string()),
             ("x-trfiq-db-step", quant::DB_STEP.to_string()),
-            // Rows are evenly spaced from sample 0 to this offset (inclusive).
-            ("x-trfiq-last-offset", last_offset.to_string()),
             ("server-timing", t.server_timing()),
         ],
         body,

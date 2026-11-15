@@ -112,14 +112,26 @@ impl ReadPlan {
         }
     }
 
-    /// One FFT-sized read per overview row across the whole recording: back to back when the
-    /// file holds no more than `rows` FFTs, otherwise `rows` reads spread from start to end.
+    /// One FFT-sized read per overview row (ADR 0006). The recording is split into `rows`
+    /// equal time slots and each read is centred in its slot, so row `i` stands for the
+    /// samples the viewer draws it over. Never more rows than whole FFTs in the file (at
+    /// least one); reads near the edges are shifted inwards to stay inside the file.
     pub fn overview(num_samples: u64, rows: u64, fft: u64) -> Self {
-        let whole = SampleWindow::whole(num_samples);
-        if num_samples / fft.max(1) <= rows {
-            Self::segments(whole, fft)
-        } else {
-            Self::spread(whole, rows.max(2), fft)
+        let n = num_samples.max(1);
+        let fft = fft.max(1);
+        let rows = rows.min(n / fft).max(1);
+        let last = n.saturating_sub(fft);
+        let slots = (0..rows)
+            .map(|i| {
+                // Centre of slot i is (i + ½)·n/rows.
+                let centre = ((2 * i + 1) as u128 * n as u128 / (2 * rows) as u128) as u64;
+                let a = centre.saturating_sub(fft / 2).min(last);
+                a..(a + fft).min(n)
+            })
+            .collect();
+        Self {
+            slots,
+            contiguous: false,
         }
     }
 
@@ -321,6 +333,28 @@ mod tests {
         assert_eq!(psd.slots().len() as u64, DETAIL_CAP / 1024);
         assert!(psd.slots().iter().all(|r| r.end - r.start == 1024));
         assert!(psd.slots().last().unwrap().end <= 10 * DETAIL_CAP);
+    }
+
+    #[test]
+    fn overview_rows_are_centred_in_equal_slots() {
+        // 4 slots of 1000 samples; reads of 100 centred at 500, 1500, 2500, 3500.
+        let p = ReadPlan::overview(4000, 4, 100);
+        assert_eq!(p.slots(), &[450..550, 1450..1550, 2450..2550, 3450..3550]);
+        // An exact fit tiles the file.
+        assert_eq!(
+            ReadPlan::overview(400, 4, 100).slots(),
+            &[0..100, 100..200, 200..300, 300..400]
+        );
+        // Never more rows than whole FFTs; edge reads are clamped inside the file.
+        let p = ReadPlan::overview(450, 100, 100);
+        assert_eq!(p.slots().len(), 4);
+        assert!(
+            p.slots()
+                .iter()
+                .all(|r| r.end <= 450 && r.end - r.start == 100)
+        );
+        // A file shorter than one FFT: one short row.
+        assert_eq!(ReadPlan::overview(10, 8, 100).slots(), [w(0, 10).range()]);
     }
 
     #[test]

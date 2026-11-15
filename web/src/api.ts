@@ -69,7 +69,6 @@ export interface Overview {
   dbMin: number
   dbStep: number
   mode: string
-  lastOffset: number
   timing: string
 }
 
@@ -163,7 +162,6 @@ export const api = {
       dbMin: Number(h('x-trfiq-db-min')),
       dbStep: Number(h('x-trfiq-db-step')),
       mode: h('x-trfiq-mode'),
-      lastOffset: Number(h('x-trfiq-last-offset')),
       timing: h('server-timing'),
     }
   },

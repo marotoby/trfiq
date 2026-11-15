@@ -65,7 +65,9 @@ trimmed to it; one that starts at or past the end, or has `count=0`, is a `400`.
 
 ### `GET /api/recordings/{id}/overview`
 
-A strided spectrogram of the whole recording: `rows` FFTs evenly spaced from start to end.
+A strided spectrogram of the whole recording. The recording is split into `rows` equal time
+slots and row `i` is one FFT centred in slot `i` (shifted inwards at the edges), so row `i`
+covers samples `i·N/rows` to `(i+1)·N/rows`.
 
 | Parameter | Default | |
 |---|---|---|
@@ -78,9 +80,8 @@ Body: `rows × fft` `u16`, row-major, fftshifted (DC in the middle), in quantise
 
 | Header | |
 |---|---|
-| `x-trfiq-fft`, `x-trfiq-rows` | Layout (rows can be fewer than asked for short files) |
+| `x-trfiq-fft`, `x-trfiq-rows` | Layout (never more rows than whole FFTs in the file, so short files get fewer) |
 | `x-trfiq-db-min`, `x-trfiq-db-step` | Quantisation (−200, 0.005) |
-| `x-trfiq-last-offset` | Sample offset of the last row (rows are evenly spaced from 0 to it) |
 | `x-trfiq-mode` | `strided` |
 
 Decode it in Python:

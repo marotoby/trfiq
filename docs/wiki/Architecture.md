@@ -33,7 +33,7 @@ listing. Each has a structural fix here:
 | `crates/storage` | Sources (S3 or local) behind one `object_store` API: list, head, get, range reads. No write methods exist. A per-source semaphore caps concurrency |
 | `crates/index` | The SQLite schema, FTS5 search and the incremental scanner, which groups objects into recordings, parses SigMF and assigns a status |
 | `crates/dsp` | Decodes every SigMF datatype to complex f32; windows; FFT to dBFS; quantisation; PSD (mean and max hold); min/max envelopes |
-| `crates/server` | The axum API, background scans, request cancellation and the embedded UI (rust-embed) |
+| `crates/server` | The axum API, background scans and the embedded UI (rust-embed). `samples.rs` is the sample-window reader every sample endpoint goes through: window checks, read plans under the 2M-sample detail cap, range reads, cancellable compute and timing |
 | `web/` | React 19, TanStack Router, Query, Table and Virtual; a WebGL2 spectrogram outside React's render loop; uPlot for the detail plots |
 
 ## Key decisions
@@ -53,6 +53,9 @@ Each decision has an ADR in [`docs/adr/`](../adr/):
    The index is derived data and can always be rebuilt.
 5. **Read-only data buckets** ([ADR 5](../adr/0005-read-only-data-buckets.md)): nothing is ever
    written to sources. User-entered metadata will live in the index.
+6. **Overview rows centred in equal slots**
+   ([ADR 6](../adr/0006-overview-rows-centred-in-slots.md)): row `i` of `R` is one FFT from
+   the middle of the `i`-th `N/R` samples, which is exactly where the viewer draws it.
 
 Full design: [`docs/DESIGN.md`](../DESIGN.md).
 
@@ -60,8 +63,9 @@ Full design: [`docs/DESIGN.md`](../DESIGN.md).
 
 1. The browser asks for `/api/recordings/{id}` (from the index) and
    `/overview?fft=1024&rows=1024`.
-2. The server computes 1,024 evenly spaced sample offsets and asks the source for those byte
-   ranges in batches. `object_store` merges nearby ranges into fewer S3 requests.
+2. The server splits the file into 1,024 equal slots, plans one FFT-sized read centred in each
+   (`ReadPlan` in `crates/server/src/samples.rs`) and asks the source for those byte ranges in
+   batches. `object_store` merges nearby ranges into fewer S3 requests.
 3. The FFTs run in parallel on the rayon pool, checking a cancel flag between rows. If the
    browser abandons the request (you changed the FFT size), the flag is set and work stops.
 4. The rows go back as `u16` with their layout in headers. The browser uploads them as one
