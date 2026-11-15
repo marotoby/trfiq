@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { WINDOWS, api, type Overview, type RecordingDetail, type WindowFn } from '../api'
+import { WINDOWS, api, type Overview, type RecordingDetail, type Tile, type WindowFn } from '../api'
 import { parseAnnotations, toPlot, type Annotation } from '../annotations'
 import * as fmt from '../format'
 import { geometry, type Geometry } from '../geometry'
@@ -19,6 +19,7 @@ import {
   type View,
 } from '../spectrogram/viewModel'
 import { Divider, Field, Icon, IconButton, Segmented } from '../ui'
+import { tileFor, tileRows, type TileWindow } from '../spectrogram/tiles'
 
 const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384]
 const ROWS = 1024
@@ -127,6 +128,26 @@ export function Viewer() {
     staleTime: Infinity,
     placeholderData: keepPreviousData,
   })
+
+  // Zoomed in, a tile of the visible time range (plus margins) is drawn over the overview.
+  const numSamples = rec.data?.num_samples ?? 0
+  const [tileWin, setTileWin] = useState<TileWindow | null>(null)
+  useEffect(() => setTileWin((cur) => tileFor(view, numSamples, cur)), [view, numSamples])
+  const tileQuery = useQuery({
+    queryKey: ['tile', id, fft, windowFn, tileWin?.start, tileWin?.count],
+    queryFn: ({ signal }) =>
+      api.tile(id, { start: tileWin!.start, count: tileWin!.count, fft, window: windowFn, rows: tileRows(fft) }, signal),
+    enabled: viewable && !!tileWin,
+    staleTime: Infinity,
+    // Keep drawing the previous tile (in its own place) while the next one loads.
+    placeholderData: keepPreviousData,
+  })
+  const tile = tileWin ? tileQuery.data : undefined
+  // The view can zoom in time down to two FFTs, the resolution tiles reach.
+  // (Only once the length is known: a 1-row limit would clamp a URL's view to the whole file.)
+  useEffect(() => {
+    if (numSamples > 0) model.setResolution(fft, Math.max(1, numSamples / fft))
+  }, [model, fft, numSamples])
 
   const auto = useMemo(
     () => (overview.data ? autoDbRange(overview.data) : null),
@@ -265,7 +286,8 @@ export function Viewer() {
               model={model}
               geo={geo}
               overview={overview.data}
-              loading={overview.isFetching}
+              tile={tile}
+              loading={overview.isFetching || (!!tileWin && tileQuery.isFetching)}
               cmap={cmap}
               lo={lo}
               hi={hi}
@@ -508,6 +530,7 @@ interface SpectrogramProps {
   model: ViewModel
   geo: Geometry
   overview: Overview | undefined
+  tile: Tile | undefined
   loading: boolean
   cmap: Colormap
   lo: number
@@ -574,6 +597,13 @@ function Spectrogram(p: SpectrogramProps) {
     }
   }, [p.overview, p.viewRef])
 
+  const { tile } = p
+  useEffect(() => {
+    const g = p.geo
+    p.viewRef.current?.setTile(tile ? { ...tile, y0: g.yOf(tile.start), y1: g.yOf(tile.start + tile.count) } : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tile, p.viewRef])
+
   const { geo, viewRef } = p
   useEffect(() => viewRef.current?.setGeometry(geo), [geo, viewRef])
   useEffect(() => viewRef.current?.setColormap(p.cmap), [p.cmap, viewRef])
@@ -618,6 +648,11 @@ function Spectrogram(p: SpectrogramProps) {
           {p.overview && (
             <>
               {p.overview.mode} overview · {p.overview.rows}×{p.overview.fft}
+              {tile && (
+                <span data-testid="tile-info">
+                  {' '}· {tile.mode === 'full' ? 'full-resolution' : 'strided'} tile · {tile.rows}×{tile.fft}
+                </span>
+              )}
               {timing && <> · read {timing.readMs} ms · compute {timing.computeMs} ms</>}
             </>
           )}

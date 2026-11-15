@@ -19,10 +19,12 @@ long the read and the compute took.
 When zoomed out, each pixel shows the **maximum** of the data it covers (max-hold), so short
 bursts don't vanish between pixels.
 
-> Beta limitation: zooming in magnifies the overview rather than fetching more detail, so a
-> deep zoom looks blocky. Full-resolution tiles are on the roadmap. The **Time** panel already
-> shows every sample once zoomed in far enough.
-
+Zoom in on time and, once the overview gets coarse, the viewer fetches a **tile**: the same
+kind of picture for just the visible time range (plus a margin, so small pans don't refetch).
+Zoomed in far enough it has one row per FFT, every sample of the range used, and the status
+bar says *full-resolution tile*. The overview stays visible around and under it while it
+loads, so the view never goes blank. For finer time detail than one FFT per row, pick a
+smaller FFT.
 ### Mouse and keyboard
 
 | Action | Mouse | Keyboard |

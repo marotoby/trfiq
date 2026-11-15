@@ -23,6 +23,24 @@ pub enum TimeMode {
     Sampled,
 }
 
+/// How the spectrogram rows of an overview or tile cover their window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowsMode {
+    /// One FFT from the middle of each of `rows` equal slots (ADR 0006).
+    Strided,
+    /// The FFTs are back to back: every sample in the window is used.
+    Full,
+}
+
+impl RowsMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strided => "strided",
+            Self::Full => "full",
+        }
+    }
+}
+
 /// How the PSD endpoint covered its window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PsdMode {
@@ -85,14 +103,17 @@ fn f32s(data: &[f32]) -> impl Iterator<Item = u8> + '_ {
     data.iter().flat_map(|v| v.to_le_bytes())
 }
 
-/// Overview: `rows × fft` `u16` quantised dB (`dB = db_min + q × db_step`), fftshifted,
-/// row-major.
-pub fn overview(fft: usize, data: &[u16]) -> Encoded {
+/// Spectrogram rows of a window (the overview's window is the whole recording, a tile's is
+/// part of it): `rows × fft` `u16` quantised dB (`dB = db_min + q × db_step`), fftshifted,
+/// row-major. Row `i` covers the `i`-th of `rows` equal slots of the window.
+pub fn spectrogram(mode: RowsMode, window: SampleWindow, fft: usize, data: &[u16]) -> Encoded {
     Encoded {
         headers: vec![
-            ("x-trfiq-mode", "strided".into()),
+            ("x-trfiq-mode", mode.as_str().into()),
             ("x-trfiq-fft", fft.to_string()),
             ("x-trfiq-rows", (data.len() / fft.max(1)).to_string()),
+            ("x-trfiq-start", window.start.to_string()),
+            ("x-trfiq-count", window.count.to_string()),
             ("x-trfiq-db-min", quant::DB_MIN.to_string()),
             ("x-trfiq-db-step", quant::DB_STEP.to_string()),
         ],
@@ -148,7 +169,21 @@ mod tests {
         vec![
             (
                 "overview",
-                overview(4, &[0, 1, 40000, 65535, 20000, 20001, 20002, 20003]),
+                spectrogram(
+                    RowsMode::Strided,
+                    w(0, 1_000_000),
+                    4,
+                    &[0, 1, 40000, 65535, 20000, 20001, 20002, 20003],
+                ),
+            ),
+            (
+                "tile",
+                spectrogram(
+                    RowsMode::Full,
+                    w(4096, 8),
+                    4,
+                    &[100, 200, 300, 400, 500, 600, 700, 800],
+                ),
             ),
             (
                 "time-raw",
@@ -222,7 +257,7 @@ mod tests {
     #[test]
     fn counts_follow_the_data() {
         assert_eq!(
-            overview(4, &[0; 12]).headers[2],
+            spectrogram(RowsMode::Strided, w(0, 99), 4, &[0; 12]).headers[2],
             ("x-trfiq-rows", "3".into())
         );
         let t = time(TimeMode::MinMax, w(0, 10), &[0.0; 12]);

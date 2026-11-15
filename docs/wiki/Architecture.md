@@ -70,5 +70,7 @@ Full design: [`docs/DESIGN.md`](../DESIGN.md).
    browser abandons the request (you changed the FFT size), the flag is set and work stops.
 4. The rows go back as `u16` with their layout in headers. The browser uploads them as one
    `R16UI` texture.
-5. Pan, zoom, colormap and levels are now pure GPU work. The detail plots then ask for
+5. Pan, zoom, colormap and levels are now pure GPU work. Zoomed in on time, the browser asks
+   for a `/tile` of the visible range (with margins) and the shader draws it over the overview
+   wherever it covers a pixel. The detail plots then ask for
    `/psd` and `/time` over the visible window.

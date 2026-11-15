@@ -273,7 +273,7 @@ uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/pack
 - [x] Spectrum (mean + max hold) and time-domain I/Q of the visible window
 - [x] Table, gallery and folders views with waterfall previews
 - [x] Distroless image, compose demo stack, numpy golden tests, Playwright e2e, CI
-- [ ] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading ([#1](https://github.com/marotoby/trfiq/issues/1))
+- [x] Full-resolution tiles when zoomed past the overview, with the coarse view shown while loading ([#1](https://github.com/marotoby/trfiq/issues/1))
 - [ ] Background max-hold pyramid and an LRU disk tile cache ([#2](https://github.com/marotoby/trfiq/issues/2))
 - [ ] Constellation plot ([#3](https://github.com/marotoby/trfiq/issues/3)); band-limit the time plot to the visible frequency range ([#4](https://github.com/marotoby/trfiq/issues/4))
 - [ ] Metadata entry for raw files (stored in the index), with JSON export/import ([#5](https://github.com/marotoby/trfiq/issues/5))

@@ -50,8 +50,10 @@ the same name and folder.
 signals near strong ones. Sparse short bursts can fall between the overview's slices: zoom in
 on the time axis, or use the Time panel.
 
-**Zoomed in, the spectrogram is blocky**: a known beta limitation. Zooming magnifies the
-overview; full-resolution tiles are on the roadmap.
+**Zoomed in, the spectrogram is blocky**: in time, it shouldn't be once the tile has loaded
+(the status bar shows *tile*); if it stays blocky, check the browser console for a failed
+`/tile` request. Each row is one FFT, so for finer time detail pick a smaller FFT. In
+frequency, the resolution is the FFT's bin width: pick a larger FFT.
 
 ## Browser
 

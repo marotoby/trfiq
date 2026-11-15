@@ -36,10 +36,14 @@ both phases (`Server-Timing: read, compute`). `SampleReader`.
 **Overview**
 The whole-recording spectrogram the viewer opens with: one FFT per row, each centred in its
 slot (ADR 0003, ADR 0006). Also used, smaller, for thumbnails.
-_Avoid_: tile (reserved for the future full-resolution tiles).
+
+**Tile**
+Spectrogram rows for part of a recording, in the overview's layout, drawn over the overview
+when zoomed in on time. Zoomed in far enough, its FFTs are back to back (full resolution).
+Chosen by `tileFor` in `web/src/spectrogram/tiles.ts`, served by `GET /tile`.
 
 **Wire format**
-The binary layout of an overview, PSD or time response: its `x-trfiq-*` headers, mode values
+The binary layout of an overview, tile, PSD or time response: its `x-trfiq-*` headers, mode values
 and body. Encoded only in `crates/server/src/wire.rs`, decoded only in `web/src/wire.ts`; the
 shared fixtures in `web/src/wire-fixtures/` keep the two in step.
 

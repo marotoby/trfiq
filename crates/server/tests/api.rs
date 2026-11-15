@@ -133,6 +133,26 @@ async fn list_detail_and_overview() {
     assert_eq!(h["x-trfiq-segments"], "1");
     assert_eq!(body.len(), 2 * 256 * 4);
 
+    // Tiles: the overview's layout for part of the file, every sample once zoomed in enough.
+    let (code, h, body) = get(
+        &app,
+        &format!("/api/recordings/{id}/tile?start=1024&count=4096&fft=256&rows=64"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(h["x-trfiq-mode"], "full");
+    assert_eq!(h["x-trfiq-rows"], "16");
+    assert_eq!(h["x-trfiq-start"], "1024");
+    assert_eq!(body.len(), 16 * 256 * 2);
+    let (_, h, _) = get(
+        &app,
+        &format!("/api/recordings/{id}/tile?start=0&count=65536&fft=256&rows=64"),
+    )
+    .await;
+    assert_eq!(h["x-trfiq-mode"], "strided");
+    let (code, _, _) = get(&app, &format!("/api/recordings/{id}/tile?start={n}")).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
     // Windows starting past the end, or empty, are rejected.
     for q in [format!("start={n}"), "count=0".into()] {
         let (code, _, _) = get(&app, &format!("/api/recordings/{id}/time?{q}")).await;

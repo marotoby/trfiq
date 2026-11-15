@@ -44,6 +44,8 @@ precision highp float;
 precision highp int;
 precision highp usampler2D;
 uniform usampler2D u_data;
+uniform usampler2D u_tile;
+uniform vec2 u_tileY;    // the tile's time range in texture space; empty when there is none
 uniform sampler2D u_lut;
 uniform vec4 u_view;     // x0, x1, y0, y1
 uniform vec2 u_size;     // canvas size in device px
@@ -51,23 +53,36 @@ uniform vec2 u_db;       // lo, hi
 uniform vec2 u_quant;    // dbMin, dbStep
 out vec4 o;
 
+// Max of the texels of tex under the [t0, t1] rectangle (in the texture space of tex).
+uint maxHold(usampler2D tex, vec2 t0, vec2 t1) {
+  ivec2 size = textureSize(tex, 0);
+  ivec2 i0 = clamp(ivec2(floor(t0 * vec2(size))), ivec2(0), size - 1);
+  ivec2 i1 = clamp(ivec2(ceil(t1 * vec2(size))) - 1, i0, size - 1);
+  ivec2 n = i1 - i0 + 1;
+  ivec2 step = max(ivec2(1), (n + ${MAX_TAPS - 1}) / ${MAX_TAPS});
+  uint q = 0u;
+  for (int y = i0.y; y <= i1.y; y += step.y) {
+    for (int x = i0.x; x <= i1.x; x += step.x) {
+      q = max(q, texelFetch(tex, ivec2(x, y), 0).r);
+    }
+  }
+  return q;
+}
+
 void main() {
-  ivec2 tex = textureSize(u_data, 0);
   vec2 frag = floor(gl_FragCoord.xy);
   // Pixel bounds in [0,1] screen space; y flipped so time runs downwards.
   vec2 s0 = vec2(frag.x, u_size.y - frag.y - 1.0) / u_size;
   vec2 s1 = s0 + 1.0 / u_size;
   vec2 t0 = vec2(mix(u_view.x, u_view.y, s0.x), mix(u_view.z, u_view.w, s0.y));
   vec2 t1 = vec2(mix(u_view.x, u_view.y, s1.x), mix(u_view.z, u_view.w, s1.y));
-  ivec2 i0 = clamp(ivec2(floor(t0 * vec2(tex))), ivec2(0), tex - 1);
-  ivec2 i1 = clamp(ivec2(ceil(t1 * vec2(tex))) - 1, i0, tex - 1);
-  ivec2 n = i1 - i0 + 1;
-  ivec2 step = max(ivec2(1), (n + ${MAX_TAPS - 1}) / ${MAX_TAPS});
-  uint q = 0u;
-  for (int y = i0.y; y <= i1.y; y += step.y) {
-    for (int x = i0.x; x <= i1.x; x += step.x) {
-      q = max(q, texelFetch(u_data, ivec2(x, y), 0).r);
-    }
+  // Pixels wholly inside the tile's time range come from the tile, the rest from the overview.
+  uint q;
+  if (u_tileY.y > u_tileY.x && t0.y >= u_tileY.x && t1.y <= u_tileY.y) {
+    float span = u_tileY.y - u_tileY.x;
+    q = maxHold(u_tile, vec2(t0.x, (t0.y - u_tileY.x) / span), vec2(t1.x, (t1.y - u_tileY.x) / span));
+  } else {
+    q = maxHold(u_data, t0, t1);
   }
   float db = u_quant.x + float(q) * u_quant.y;
   float c = clamp((db - u_db.x) / max(u_db.y - u_db.x, 1e-3), 0.0, 1.0);
@@ -96,6 +111,9 @@ export class SpectrogramView {
   private ctx: CanvasRenderingContext2D
   private prog: WebGLProgram
   private dataTex: WebGLTexture
+  private tileTex: WebGLTexture
+  /** The tile on screen, with its time range in texture space. */
+  private tile: { data: Uint16Array; w: number; h: number; y0: number; y1: number } | null = null
   private lutTex: WebGLTexture
   private u: Record<string, WebGLUniformLocation | null> = {}
   private data: Uint16Array | null = null
@@ -145,10 +163,11 @@ export class SpectrogramView {
     gl.linkProgram(prog)
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? 'link')
     this.prog = prog
-    for (const k of ['u_data', 'u_lut', 'u_view', 'u_size', 'u_db', 'u_quant'])
+    for (const k of ['u_data', 'u_tile', 'u_tileY', 'u_lut', 'u_view', 'u_size', 'u_db', 'u_quant'])
       this.u[k] = gl.getUniformLocation(prog, k)
 
     this.dataTex = gl.createTexture()!
+    this.tileTex = gl.createTexture()!
     this.lutTex = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_2D, this.lutTex)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -198,7 +217,25 @@ export class SpectrogramView {
     this.w = width
     this.h = height
     this.quant = quant
-    this.model.setResolution(width, height)
+    this.invalidate()
+  }
+
+  /**
+   * A tile (higher time resolution for part of the recording) to draw over the overview,
+   * covering texture y from `y0` to `y1`; null to show only the overview.
+   */
+  setTile(t: (Pick<Overview, 'data' | 'fft' | 'rows'> & { y0: number; y1: number }) | null) {
+    if (t && t.fft <= this.maxTextureSize && t.rows <= this.maxTextureSize) {
+      const gl = this.gl
+      gl.bindTexture(gl.TEXTURE_2D, this.tileTex)
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, t.fft, t.rows, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, t.data)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      this.tile = { data: t.data, w: t.fft, h: t.rows, y0: t.y0, y1: t.y1 }
+    } else {
+      this.tile = null
+    }
     this.invalidate()
   }
 
@@ -382,10 +419,16 @@ export class SpectrogramView {
     if (!this.onCursor || !this.cursor || !this.geo) return
     const t = this.toTex(this.cursor)
     let db: number | null = null
-    if (this.data && this.w) {
-      const ix = Math.min(this.w - 1, Math.max(0, Math.floor(t.x * this.w)))
-      const iy = Math.min(this.h - 1, Math.max(0, Math.floor(t.y * this.h)))
-      db = dbOf(this.quant, this.data[iy * this.w + ix])
+    // Read the value the shader shows there: the tile's where it covers, else the overview's.
+    const tile = this.tile
+    const src =
+      tile && t.y >= tile.y0 && t.y < tile.y1
+        ? { data: tile.data, w: tile.w, h: tile.h, y: (t.y - tile.y0) / (tile.y1 - tile.y0) }
+        : this.data && { data: this.data, w: this.w, h: this.h, y: t.y }
+    if (src && src.w) {
+      const ix = Math.min(src.w - 1, Math.max(0, Math.floor(t.x * src.w)))
+      const iy = Math.min(src.h - 1, Math.max(0, Math.floor(src.y * src.h)))
+      db = dbOf(this.quant, src.data[iy * src.w + ix])
     }
     this.onCursor({
       freq: this.geo.freqAt(t.x),
@@ -432,6 +475,11 @@ export class SpectrogramView {
       gl.activeTexture(gl.TEXTURE1)
       gl.bindTexture(gl.TEXTURE_2D, this.lutTex)
       gl.uniform1i(this.u.u_lut, 1)
+      // Without a tile, unit 2 still needs a valid unsigned texture: reuse the overview.
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, this.tile ? this.tileTex : this.dataTex)
+      gl.uniform1i(this.u.u_tile, 2)
+      gl.uniform2f(this.u.u_tileY, this.tile?.y0 ?? 0, this.tile?.y1 ?? 0)
       const v = this.model.view
       gl.uniform4f(this.u.u_view, v.x0, v.x1, v.y0, v.y1)
       gl.uniform2f(this.u.u_size, this.glCanvas.width, this.glCanvas.height)

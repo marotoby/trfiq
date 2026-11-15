@@ -59,7 +59,7 @@ test('viewer renders the overview within budget and keeps state in the URL', asy
 
   const t0 = Date.now()
   await row.click()
-  await expect(page.locator('.statusbar')).toContainText('strided overview', { timeout: 5000 })
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/, { timeout: 5000 })
   // Budget: first overview < 2 s.
   expect(Date.now() - t0).toBeLessThan(2000)
 
@@ -85,7 +85,9 @@ test('viewer renders the overview within budget and keeps state in the URL', asy
   await expect(page).toHaveURL(/v=/)
   const url = page.url()
   await page.reload()
-  await expect(page.locator('.statusbar')).toContainText('strided overview')
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/)
+  // Still the same view once the page has settled (the URL follows the view after 250 ms).
+  await page.waitForTimeout(800)
   expect(page.url()).toBe(url)
 
   // Keyboard reset clears the view param.
@@ -105,7 +107,7 @@ test('box zoom zooms to the dragged region and Back restores the view', async ({
   const errors = watchErrors(page)
   await page.goto('/?q=chirps')
   await page.locator('.tr').first().click()
-  await expect(page.locator('.statusbar')).toContainText('strided overview')
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/)
   const back = page.getByRole('button', { name: /Previous view/ })
   await expect(back).toBeDisabled()
 
@@ -127,7 +129,7 @@ test('a URL changed from outside moves the plot and the detail plots', async ({ 
   const errors = watchErrors(page)
   await page.goto('/?q=chirps')
   await page.locator('.tr').first().click()
-  await expect(page.locator('.statusbar')).toContainText('strided overview')
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/)
   const timeInfo = page.getByTestId('time-plot').locator('.detail-info')
   await expect(timeInfo).toContainText(/samples/)
   const before = (await timeInfo.textContent()) ?? ''
@@ -149,11 +151,43 @@ test('a URL changed from outside moves the plot and the detail plots', async ({ 
   expect(errors).toEqual([])
 })
 
+test('zooming in fetches a full-resolution tile within budget', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/?q=bursts')
+  await page.locator('.tr').first().click()
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/)
+  await expect(page.getByTestId('tile-info')).toHaveCount(0)
+
+  // Zoom to 1/200 of the recording in time: the overview has ~5 rows there, the tile far more.
+  const tileResponse = page.waitForResponse((r) => r.url().includes('/tile?'))
+  const url = new URL(page.url())
+  url.searchParams.set('v', '0,1,0.4,0.405')
+  await page.evaluate((u) => {
+    history.pushState(history.state, '', u)
+    dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+  }, url.toString())
+  const r = await tileResponse
+  expect(r.ok()).toBe(true)
+  const t0 = Date.now()
+  await r.finished()
+  const compute = /compute;dur=([\d.]+)/.exec((await r.allHeaders())['server-timing'] ?? '')
+  expect(Number(compute?.[1])).toBeLessThan(300)
+  expect(Date.now() - t0).toBeLessThan(300)
+  await expect(page.getByTestId('tile-info')).toContainText('full-resolution tile')
+  // The view is drawn, not blank: many distinct colours.
+  expect(await distinctColours(page, '.spectrogram canvas:first-of-type')).toBeGreaterThan(20)
+
+  // Zooming back out drops the tile.
+  await page.getByRole('button', { name: /Show everything/ }).click()
+  await expect(page.getByTestId('tile-info')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 test('annotations are listed, filterable, and zoom the plot when clicked', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto('/?q=ism_433')
   await page.locator('.tr').first().click()
-  await expect(page.locator('.statusbar')).toContainText('strided overview')
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/)
 
   const items = page.locator('.ann-item')
   await expect(items).toHaveCount(19)
@@ -182,7 +216,7 @@ test('spectrum and time plots follow the visible window', async ({ page }) => {
   const errors = watchErrors(page)
   await page.goto('/?q=ism_433')
   await page.locator('.tr').first().click()
-  await expect(page.locator('.statusbar')).toContainText('strided overview')
+  await expect(page.locator('.statusbar')).toContainText(/(strided|full) overview/)
 
   // Both panels are on by default and cover the whole recording.
   const spectrum = page.getByTestId('spectrum-plot')

@@ -63,9 +63,9 @@ export interface ListParams {
   status?: Status
 }
 
-import { decodeOverview, decodePsd, decodeTime, type Overview, type PsdData, type TimeData } from './wire'
+import { decodeOverview, decodePsd, decodeTime, type Overview, type PsdData, type Tile, type TimeData } from './wire'
 
-export type { Overview, PsdData, TimeData } from './wire'
+export type { Overview, PsdData, Tile, TimeData } from './wire'
 
 export const WINDOWS = ['hann', 'blackman-harris', 'rect'] as const
 export type WindowFn = (typeof WINDOWS)[number]
@@ -129,6 +129,16 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<Overview> => {
     const r = await check(await fetch(`${BASE}/api/recordings/${id}/overview${qs(p)}`, { signal }))
+    return decodeOverview((k) => r.headers.get(k), await r.arrayBuffer())
+  },
+
+  /** The overview's layout for part of the recording (full time resolution when zoomed in). */
+  tile: async (
+    id: number,
+    p: WindowParams & { fft: number; rows: number; window: WindowFn },
+    signal?: AbortSignal,
+  ): Promise<Tile> => {
+    const r = await check(await fetch(`${BASE}/api/recordings/${id}/tile${qs({ ...p })}`, { signal }))
     return decodeOverview((k) => r.headers.get(k), await r.arrayBuffer())
   },
 

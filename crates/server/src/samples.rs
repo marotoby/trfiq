@@ -112,27 +112,32 @@ impl ReadPlan {
         }
     }
 
-    /// One FFT-sized read per overview row (ADR 0006). The recording is split into `rows`
+    /// One FFT-sized read per spectrogram row (ADR 0006). The window is split into `rows`
     /// equal time slots and each read is centred in its slot, so row `i` stands for the
-    /// samples the viewer draws it over. Never more rows than whole FFTs in the file (at
-    /// least one); reads near the edges are shifted inwards to stay inside the file.
-    pub fn overview(num_samples: u64, rows: u64, fft: u64) -> Self {
-        let n = num_samples.max(1);
+    /// samples the viewer draws it over. Never more rows than whole FFTs in the window (at
+    /// least one); reads near its edges are shifted inwards to stay inside it. When the slots
+    /// are exactly one FFT long, the reads tile the window and every sample is used.
+    pub fn rows(window: SampleWindow, rows: u64, fft: u64) -> Self {
+        let n = window.count;
         let fft = fft.max(1);
         let rows = rows.min(n / fft).max(1);
-        let last = n.saturating_sub(fft);
-        let slots = (0..rows)
+        let last = window.end().saturating_sub(fft).max(window.start);
+        let slots: Vec<Range<u64>> = (0..rows)
             .map(|i| {
-                // Centre of slot i is (i + ½)·n/rows.
-                let centre = ((2 * i + 1) as u128 * n as u128 / (2 * rows) as u128) as u64;
-                let a = centre.saturating_sub(fft / 2).min(last);
-                a..(a + fft).min(n)
+                // Centre of slot i is start + (i + ½)·n/rows.
+                let centre =
+                    window.start + ((2 * i + 1) as u128 * n as u128 / (2 * rows) as u128) as u64;
+                let a = centre.saturating_sub(fft / 2).clamp(window.start, last);
+                a..(a + fft).min(window.end())
             })
             .collect();
-        Self {
-            slots,
-            contiguous: false,
-        }
+        let contiguous = slots.windows(2).all(|p| p[0].end == p[1].start);
+        Self { slots, contiguous }
+    }
+
+    /// [`ReadPlan::rows`] over the whole recording: the overview.
+    pub fn overview(num_samples: u64, rows: u64, fft: u64) -> Self {
+        Self::rows(SampleWindow::whole(num_samples), rows, fft)
     }
 
     /// The plan for a detail request. Up to [`DETAIL_CAP`] samples, every sample is read in one
@@ -355,6 +360,25 @@ mod tests {
         );
         // A file shorter than one FFT: one short row.
         assert_eq!(ReadPlan::overview(10, 8, 100).slots(), [w(0, 10).range()]);
+    }
+
+    #[test]
+    fn rows_of_a_window_stay_inside_it() {
+        // Window 1000..5000 in 4 slots of 1000; reads of 100 centred at 1500, 2500, ….
+        let p = ReadPlan::rows(w(1000, 4000), 4, 100);
+        assert_eq!(p.slots(), &[1450..1550, 2450..2550, 3450..3550, 4450..4550]);
+        assert!(p.is_sampled());
+        // As many rows as FFTs: back to back, every sample used, read in one range.
+        let p = ReadPlan::rows(w(1000, 400), 1024, 100);
+        assert_eq!(p.slots(), &[1000..1100, 1100..1200, 1200..1300, 1300..1400]);
+        assert!(!p.is_sampled());
+        // Edge reads are shifted inwards, never outside the window.
+        let p = ReadPlan::rows(w(500, 250), 2, 100);
+        assert!(
+            p.slots()
+                .iter()
+                .all(|r| r.start >= 500 && r.end <= 750 && r.end - r.start == 100)
+        );
     }
 
     #[test]

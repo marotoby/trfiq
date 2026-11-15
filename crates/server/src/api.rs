@@ -15,7 +15,7 @@ use trfiq_index::{ListQuery, Recording, RecordingDetail};
 use crate::samples::{Coverage, ReadPlan, SampleReader, SampleWindow};
 use crate::state::AppState;
 use crate::web;
-use crate::wire::{self, PsdMode, TimeMode};
+use crate::wire::{self, PsdMode, RowsMode, TimeMode};
 
 /// Upper bound on overview rows per request (rows × fft × 2 bytes must stay sane).
 const MAX_ROWS: usize = 4096;
@@ -32,6 +32,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/recordings", get(list))
         .route("/api/recordings/{id}", get(detail))
         .route("/api/recordings/{id}/overview", get(overview))
+        .route("/api/recordings/{id}/tile", get(tile))
         .route("/api/recordings/{id}/time", get(time))
         .route("/api/recordings/{id}/psd", get(psd))
         .route("/healthz", get(|| async { "ok" }))
@@ -173,20 +174,48 @@ fn spectrogram(dt: Datatype, fft: Option<usize>, window: Option<Window>) -> ApiR
 }
 
 #[derive(Debug, Deserialize)]
-struct OverviewParams {
+struct RowsParams {
+    /// Tile only: the sample window (default: the whole recording).
+    start: Option<u64>,
+    count: Option<u64>,
     fft: Option<usize>,
     rows: Option<usize>,
     window: Option<Window>,
 }
 
 /// Overview of a whole recording (ADR 0003): one FFT per row, each centred in an equal slot
-/// of the recording (ADR 0006). Layout: [`wire::overview`].
+/// of the recording (ADR 0006). Layout: [`wire::spectrogram`].
 async fn overview(
     State(st): St,
     Path(id): Path<i64>,
-    Query(p): Query<OverviewParams>,
+    Query(p): Query<RowsParams>,
 ) -> ApiResult<Response> {
     let reader = open_reader(&st, id).await?;
+    let w = SampleWindow::whole(reader.num_samples());
+    spectrogram_rows(id, reader, w, p, "overview").await
+}
+
+/// A tile: the overview's layout for part of a recording, so the viewer can show full time
+/// resolution when zoomed in. Once a window has no more FFTs than `rows`, every sample is used
+/// (`x-trfiq-mode: full`).
+async fn tile(
+    State(st): St,
+    Path(id): Path<i64>,
+    Query(p): Query<RowsParams>,
+) -> ApiResult<Response> {
+    let reader = open_reader(&st, id).await?;
+    let w = SampleWindow::new(p.start, p.count, reader.num_samples())
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    spectrogram_rows(id, reader, w, p, "tile").await
+}
+
+async fn spectrogram_rows(
+    id: i64,
+    reader: SampleReader,
+    w: SampleWindow,
+    p: RowsParams,
+    what: &'static str,
+) -> ApiResult<Response> {
     let spec = spectrogram(reader.datatype(), p.fft, p.window)?;
     let fft = spec.fft_size();
     let rows = p.rows.unwrap_or(1024).clamp(1, MAX_ROWS);
@@ -196,14 +225,27 @@ async fn overview(
             "rows × fft too large",
         ));
     }
-    let plan = ReadPlan::overview(reader.num_samples(), rows as u64, fft as u64);
+    let plan = ReadPlan::rows(w, rows as u64, fft as u64);
+    let mode = if plan.is_sampled() {
+        RowsMode::Strided
+    } else {
+        RowsMode::Full
+    };
     let t = reader
         .run(&plan, move |chunks, cancel| spec.rows(chunks, cancel))
         .await?;
     let rows = plan.slots().len();
-    tracing::debug!(id, fft, rows, t.read_ms, t.compute_ms, "overview");
-
-    Ok(wire::overview(fft, &t.value).respond(t.server_timing()))
+    tracing::debug!(
+        id,
+        w.start,
+        w.count,
+        fft,
+        rows,
+        t.read_ms,
+        t.compute_ms,
+        "{what}"
+    );
+    Ok(wire::spectrogram(mode, w, fft, &t.value).respond(t.server_timing()))
 }
 
 // ---- detail plots ---------------------------------------------------------------------------

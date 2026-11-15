@@ -86,7 +86,8 @@ Body: `rows × fft` `u16`, row-major, fftshifted (DC in the middle), in quantise
 |---|---|
 | `x-trfiq-fft`, `x-trfiq-rows` | Layout (never more rows than whole FFTs in the file, so short files get fewer) |
 | `x-trfiq-db-min`, `x-trfiq-db-step` | Quantisation (−200, 0.005) |
-| `x-trfiq-mode` | `strided` |
+| `x-trfiq-mode` | `strided`, or `full` when the file holds no more FFTs than `rows` and every sample is used |
+| `x-trfiq-start`, `x-trfiq-count` | The sample window the rows cover (the whole file here) |
 
 Decode it in Python:
 
@@ -95,6 +96,20 @@ import numpy as np, requests
 r = requests.get(f"{base}/api/recordings/{rid}/overview", params={"fft": 1024, "rows": 512})
 db = -200 + np.frombuffer(r.content, "<u2").reshape(int(r.headers["x-trfiq-rows"]), -1) * 0.005
 ```
+
+### `GET /api/recordings/{id}/tile`
+
+The overview's layout for part of the recording: `rows` FFTs centred in equal slots of the
+window `[start, start + count)`. The viewer draws it over the overview when zoomed in. Once
+the window holds no more FFTs than `rows`, they are back to back and every sample is used
+(`x-trfiq-mode: full`).
+
+| Parameter | Default | |
+|---|---|---|
+| `start`, `count` | whole file | Sample window |
+| `fft`, `rows`, `window` | 1024, 1024, `hann` | As for `overview` |
+
+Same body and headers as `overview`.
 
 ### `GET /api/recordings/{id}/psd`
 

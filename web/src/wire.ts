@@ -20,15 +20,23 @@ export interface Timing {
   computeMs: number
 }
 
+/** Spectrogram rows of a sample window: the whole recording (overview) or part of it (tile).
+ * Row `i` covers the `i`-th of `rows` equal slots of the window. */
 export interface Overview {
-  mode: 'strided'
+  /** strided: one FFT from the middle of each slot; full: back-to-back FFTs, every sample used. */
+  mode: 'strided' | 'full'
   fft: number
   rows: number
+  start: number
+  count: number
   quant: Quant
   /** `rows × fft` quantised dB, fftshifted, row-major. */
   data: Uint16Array
   timing: Timing | null
 }
+
+/** A tile is an overview of part of the recording. */
+export type Tile = Overview
 
 interface Window {
   start: number
@@ -114,9 +122,11 @@ export function decodeOverview(get: Get, body: ArrayBuffer): Overview {
   const data = new Uint16Array(body)
   if (data.length !== fft * rows) throw new WireError(`overview body has ${data.length} values, expected ${fft}×${rows}`)
   return {
-    mode: oneOf(get, 'x-trfiq-mode', ['strided'] as const),
+    mode: oneOf(get, 'x-trfiq-mode', ['strided', 'full'] as const),
     fft,
     rows,
+    start: num(get, 'x-trfiq-start'),
+    count: num(get, 'x-trfiq-count'),
     quant: { dbMin: num(get, 'x-trfiq-db-min'), dbStep: num(get, 'x-trfiq-db-step') },
     data,
     timing: parseTiming(get('server-timing')),

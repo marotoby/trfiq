@@ -15,11 +15,18 @@ describe('wire fixtures from the server', () => {
   test('overview', async () => {
     const { get, body } = await fixture('overview')
     const o = decodeOverview(get, body)
-    expect([o.mode, o.fft, o.rows]).toEqual(['strided', 4, 2])
+    expect([o.mode, o.fft, o.rows, o.start, o.count]).toEqual(['strided', 4, 2, 0, 1_000_000])
     expect(o.timing).toEqual({ readMs: 1.5, computeMs: 2 })
     close(o.data, [0, 1, 40000, 65535, 20000, 20001, 20002, 20003])
     expect(dbOf(o.quant, 0)).toBe(-200)
     expect(dbOf(o.quant, 40000)).toBeCloseTo(0, 6)
+  })
+
+  test('tile', async () => {
+    const { get, body } = await fixture('tile')
+    const t = decodeOverview(get, body)
+    expect([t.mode, t.fft, t.rows, t.start, t.count]).toEqual(['full', 4, 2, 4096, 8])
+    close(t.data, [100, 200, 300, 400, 500, 600, 700, 800])
   })
 
   test('raw time samples', async () => {

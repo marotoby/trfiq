@@ -1,0 +1,13 @@
+{
+  "body_hex": "6400c8002c019001f4015802bc022003",
+  "headers": {
+    "server-timing": "read;dur=1.5, compute;dur=2.0",
+    "x-trfiq-count": "8",
+    "x-trfiq-db-min": "-200",
+    "x-trfiq-db-step": "0.005",
+    "x-trfiq-fft": "4",
+    "x-trfiq-mode": "full",
+    "x-trfiq-rows": "2",
+    "x-trfiq-start": "4096"
+  }
+}
