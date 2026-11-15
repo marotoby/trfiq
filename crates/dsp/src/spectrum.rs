@@ -54,7 +54,7 @@ impl Spectrogram {
     pub fn row_db(&self, bytes: &[u8], out: &mut [f32]) {
         let mut buf = Vec::with_capacity(self.n);
         let mut scratch = vec![Complex32::default(); self.fft.get_inplace_scratch_len()];
-        self.row_with(bytes, &mut buf, &mut scratch, |k, db| out[k] = db);
+        self.row_with(bytes, &mut buf, &mut scratch, |k, p| out[k] = to_db(p));
     }
 
     fn row_with(
@@ -64,6 +64,7 @@ impl Spectrogram {
         scratch: &mut [Complex32],
         mut emit: impl FnMut(usize, f32),
     ) {
+        // Emits normalised linear power per fftshifted bin.
         let n = self.n;
         self.dtype
             .decode_into(&bytes[..bytes.len().min(self.row_bytes())], buf);
@@ -75,8 +76,7 @@ impl Spectrogram {
         let half = n / 2;
         for (k, x) in buf.iter().enumerate() {
             // fftshift: bin k lands at (k + n/2) mod n.
-            let p = x.norm_sqr() * self.inv_norm;
-            emit((k + half) % n, 10.0 * (p + 1e-30).log10());
+            emit((k + half) % n, x.norm_sqr() * self.inv_norm);
         }
     }
 
@@ -100,14 +100,62 @@ impl Spectrogram {
                     if cancel.load(Ordering::Relaxed) {
                         return Err(DspError::Cancelled);
                     }
-                    self.row_with(chunk.as_ref(), buf, scratch, |k, db| {
-                        row[k] = quant::quantize(db)
+                    self.row_with(chunk.as_ref(), buf, scratch, |k, p| {
+                        row[k] = quant::quantize(to_db(p))
                     });
                     Ok(())
                 },
             )?;
         Ok(out)
     }
+
+    /// Welch-style power spectral density: one windowed FFT per chunk, combined in linear
+    /// power. Returns `(mean_db, max_db)`, each `n` values in dBFS, fftshifted.
+    pub fn psd<B: AsRef<[u8]> + Sync>(
+        &self,
+        chunks: &[B],
+        cancel: &AtomicBool,
+    ) -> Result<(Vec<f32>, Vec<f32>), DspError> {
+        let n = self.n;
+        let (sum, max) = chunks
+            .par_iter()
+            .try_fold(
+                || {
+                    let scratch = vec![Complex32::default(); self.fft.get_inplace_scratch_len()];
+                    (Vec::with_capacity(n), scratch, vec![0f64; n], vec![0f32; n])
+                },
+                |(mut buf, mut scratch, mut sum, mut max), chunk| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err(DspError::Cancelled);
+                    }
+                    self.row_with(chunk.as_ref(), &mut buf, &mut scratch, |k, p| {
+                        sum[k] += p as f64;
+                        max[k] = max[k].max(p);
+                    });
+                    Ok((buf, scratch, sum, max))
+                },
+            )
+            .map(|r| r.map(|(_, _, s, m)| (s, m)))
+            .try_reduce(
+                || (vec![0f64; n], vec![0f32; n]),
+                |(mut s1, mut m1), (s2, m2)| {
+                    for k in 0..n {
+                        s1[k] += s2[k];
+                        m1[k] = m1[k].max(m2[k]);
+                    }
+                    Ok((s1, m1))
+                },
+            )?;
+        let count = chunks.len().max(1) as f64;
+        Ok((
+            sum.iter().map(|&s| to_db((s / count) as f32)).collect(),
+            max.iter().map(|&p| to_db(p)).collect(),
+        ))
+    }
+}
+
+fn to_db(p: f32) -> f32 {
+    10.0 * (p + 1e-30).log10()
 }
 
 /// Sample offsets for a strided overview: `rows` evenly spaced FFT-sized reads covering
@@ -167,6 +215,27 @@ mod tests {
         }
         assert!(matches!(
             s.rows(&chunks, &AtomicBool::new(true)),
+            Err(DspError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn psd_averages_in_linear_power_and_tracks_max() {
+        let n = 256;
+        let s = Spectrogram::new(Datatype::parse("cf32_le").unwrap(), n, Window::Hann).unwrap();
+        // Same tone, full scale then -20 dB: mean power is (1 + 0.01) / 2 → -2.97 dB.
+        let chunks = vec![tone_cf32(n, 10.0, 1.0), tone_cf32(n, 10.0, 0.1)];
+        let (mean, max) = s.psd(&chunks, &AtomicBool::new(false)).unwrap();
+        let k = n / 2 + 10;
+        assert!((max[k] - 0.0).abs() < 0.01, "max {}", max[k]);
+        assert!(
+            (mean[k] - 10.0 * (1.01f32 / 2.0).log10()).abs() < 0.01,
+            "mean {}",
+            mean[k]
+        );
+        assert!(mean.iter().zip(&max).all(|(a, b)| a <= &(b + 1e-3)));
+        assert!(matches!(
+            s.psd(&chunks, &AtomicBool::new(true)),
             Err(DspError::Cancelled)
         ));
     }

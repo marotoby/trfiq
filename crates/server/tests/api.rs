@@ -27,8 +27,8 @@ async fn get(app: &axum::Router, uri: &str) -> (StatusCode, axum::http::HeaderMa
 #[tokio::test]
 async fn list_detail_and_overview() {
     let dir = tempfile::tempdir().unwrap();
-    // A ci16 tone at +1/8 of the sample rate, 64k samples.
-    let n = 65536;
+    // A ci16 tone at +1/8 of the sample rate, 128k samples.
+    let n = 131072;
     let data: Vec<u8> = (0..n)
         .flat_map(|i| {
             let ph = TAU * 0.125 * i as f32;
@@ -80,6 +80,58 @@ async fn list_detail_and_overview() {
     assert_eq!(peak, 128 + 32, "tone at +fs/8 → bin n/2 + n/8");
     // Amplitude 16000/32768 ≈ -6.2 dBFS.
     assert!((quant::dequantize(row0[peak]) + 6.23).abs() < 0.1);
+
+    let f32s = |b: &[u8]| -> Vec<f32> {
+        b.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
+            .collect()
+    };
+    let amp = 16000.0 / 32768.0;
+
+    // Time: short windows come back sample by sample…
+    let (code, h, body) = get(&app, &format!("/api/recordings/{id}/time?start=0&count=8")).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(h["x-trfiq-mode"], "raw");
+    let iq = f32s(&body);
+    assert_eq!(iq.len(), 16);
+    assert!((iq[0] - amp).abs() < 1e-3 && iq[1].abs() < 1e-3, "{iq:?}");
+    // …long ones as a min/max envelope that still reaches the tone's peaks.
+    let (code, h, body) = get(&app, &format!("/api/recordings/{id}/time?points=64")).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(h["x-trfiq-mode"], "minmax");
+    assert_eq!(h["x-trfiq-count"], n.to_string());
+    let env = f32s(&body);
+    assert_eq!(env.len(), 64 * 4);
+    for b in env.chunks(4) {
+        assert!(
+            (b[0] + amp).abs() < 1e-2 && (b[1] - amp).abs() < 1e-2,
+            "{b:?}"
+        );
+    }
+
+    // PSD: peak in the tone's bin at its level, mean and max-hold agree for a steady tone.
+    let (code, h, body) = get(&app, &format!("/api/recordings/{id}/psd?fft=256")).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(h["x-trfiq-mode"], "full");
+    assert_eq!(h["x-trfiq-segments"], (n / 256).to_string());
+    let v = f32s(&body);
+    let (mean, max) = v.split_at(256);
+    let peak = (0..256)
+        .max_by(|&a, &b| mean[a].total_cmp(&mean[b]))
+        .unwrap();
+    assert_eq!(peak, 128 + 32);
+    assert!((mean[peak] + 6.23).abs() < 0.1 && (max[peak] + 6.23).abs() < 0.1);
+    // A window shorter than one FFT is zero-padded, not rejected.
+    let (code, h, body) = get(
+        &app,
+        &format!("/api/recordings/{id}/psd?fft=256&start=1000&count=10"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(h["x-trfiq-segments"], "1");
+    assert_eq!(body.len(), 2 * 256 * 4);
 
     let (code, _, _) = get(&app, &format!("/api/recordings/{id}/overview?fft=1000")).await;
     assert_eq!(code, StatusCode::BAD_REQUEST);

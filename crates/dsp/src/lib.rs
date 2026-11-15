@@ -6,6 +6,7 @@
 pub mod datatype;
 pub mod quant;
 pub mod spectrum;
+pub mod timeseries;
 pub mod window;
 
 pub use datatype::Datatype;
