@@ -49,8 +49,8 @@ are kept, just not interpreted yet.
 
 | SigMF feature | What happens today |
 |---|---|
-| Several `captures` segments | Only the first segment's frequency and date are used; a retune mid-file isn't shown on the axis |
-| `core:header_bytes` | Not skipped: the header bytes are decoded as samples |
+| Several `captures` segments | Only the first segment's frequency and date are used; a retune mid-file isn't shown on the axis ([#11](https://github.com/marotoby/trfiq/issues/11)) |
+| `core:header_bytes` | Not skipped: the header bytes are decoded as samples ([#10](https://github.com/marotoby/trfiq/issues/10)) |
 | `core:num_channels` > 1 | Channels aren't de-interleaved |
 | `.sigmf` archives (tar) | Not opened |
 | `.sigmf-collection` | Ignored |

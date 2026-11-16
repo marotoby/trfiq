@@ -100,8 +100,8 @@ clients even though the UI doesn't interpret it yet.
 
 | SigMF feature | What happens today |
 |---|---|
-| Several `captures` segments | Only the first segment's frequency and date are used; a retune mid-file isn't shown on the axis |
-| `core:header_bytes` | Not skipped: the header bytes are decoded as samples |
+| Several `captures` segments | Only the first segment's frequency and date are used; a retune mid-file isn't shown on the axis ([#11](https://github.com/marotoby/trfiq/issues/11)) |
+| `core:header_bytes` | Not skipped: the header bytes are decoded as samples ([#10](https://github.com/marotoby/trfiq/issues/10)) |
 | `core:num_channels` > 1 | Channels aren't de-interleaved |
 | `.sigmf` archives (tar) | Not opened |
 | `.sigmf-collection` | Ignored |
@@ -321,6 +321,7 @@ uvx --from commitizen cz bump          # bump the version (Cargo.toml + web/pack
 - [ ] Constellation plot ([#3](https://github.com/marotoby/trfiq/issues/3)); band-limit the time plot to the visible frequency range ([#4](https://github.com/marotoby/trfiq/issues/4))
 - [ ] Metadata entry for raw files (stored in the index), with JSON export/import ([#5](https://github.com/marotoby/trfiq/issues/5))
 - [ ] Frequency and date filters in the UI (the API already supports them) ([#6](https://github.com/marotoby/trfiq/issues/6))
+- [ ] SigMF `core:header_bytes` ([#10](https://github.com/marotoby/trfiq/issues/10)) and several capture segments ([#11](https://github.com/marotoby/trfiq/issues/11))
 - [ ] Prometheus `/metrics` ([#7](https://github.com/marotoby/trfiq/issues/7))
 - [ ] Byte-plane shuffle before compression ([#8](https://github.com/marotoby/trfiq/issues/8))
 - [ ] 100 GB synthetic-file load test against the performance budgets ([#9](https://github.com/marotoby/trfiq/issues/9))
