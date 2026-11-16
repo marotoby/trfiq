@@ -40,6 +40,7 @@ responsive even on 100 GB files.
 ## Contents
 
 - [Features](#features)
+- [SigMF support](#sigmf-support)
 - [Quick start](#quick-start)
 - [Connect your MinIO / S3](#connect-your-minio--s3)
 - [Using the viewer](#using-the-viewer)
@@ -54,9 +55,9 @@ responsive even on 100 GB files.
 | | |
 |---|---|
 | **Sources** | Any number of S3-compatible buckets (MinIO, AWS, RustFS, …) and local folders, side by side |
-| **Formats** | SigMF pairs in every datatype (`cf64 cf32 ci32 ci16 ci8 cu32 cu16 cu8`, real variants, LE/BE); raw `.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` with the datatype guessed from the extension |
+| **Formats** | SigMF pairs in every datatype (`cf64 cf32 ci32 ci16 ci8 cu32 cu16 cu8`, real variants, LE/BE); raw `.bin .cfile .iq .raw .dat .cu8 .cs8 .cs16 .cf32` with the datatype guessed from the extension. See [SigMF support](#sigmf-support) |
 | **Browse** | Table view with a waterfall preview when you hover a recording, a gallery of waterfall thumbnails, or a folders view (source and directory tree with counts) |
-| **Index & search** | Full-text search over names, descriptions, hardware and annotation labels; filter by status, datatype, frequency band and capture date |
+| **Index & search** | Full-text search over names, descriptions, hardware and annotation labels; filter by status. The API also filters by datatype, frequency band and capture date (UI filters: [#6](https://github.com/marotoby/trfiq/issues/6)) |
 | **Spectrogram** | FFT 256 to 16384, Hann / Blackman-Harris / rectangular windows, turbo / viridis / gray colormaps, max-hold downsampling so short bursts never vanish when zoomed out |
 | **Spectrum & time plots** | For whatever time range is on screen: power spectrum (mean + max hold) and I/Q over time. Raw samples when zoomed in, a min/max envelope when zoomed out, so peaks never disappear |
 | **Navigation** | Box zoom with live Δf/Δt, wheel zoom per axis, drag to pan, zoom history, keyboard control |
@@ -68,6 +69,48 @@ responsive even on 100 GB files.
   <img src="docs/images/screenshot-recordings.jpg" alt="Table view with a waterfall preview on hover" width="49%">
   <img src="docs/images/screenshot-gallery.jpg" alt="Gallery view with waterfall thumbnails" width="49%">
 </p>
+
+## SigMF support
+
+T-RF/IQ reads [SigMF](https://sigmf.org) recordings: a `name.sigmf-meta` next to a
+`name.sigmf-data`, at any depth in a bucket or folder. It never writes metadata.
+
+**Datatypes:** all 24, complex and real. That is `f64 f32 i32 i16 i8 u32 u16 u8`, each with a
+`c` (complex) or `r` (real) prefix, and `_le` or `_be` on the multi-byte ones. Samples are
+normalised to ±1 full scale and power is shown in dBFS.
+
+**Fields it uses:**
+
+| Field | Used for |
+|---|---|
+| `global.core:datatype` | Decoding (required; without it the recording is **Broken**) |
+| `global.core:sample_rate` | Time and frequency axes. Without it, axes are in samples and cycles/sample |
+| `global.core:description`, `core:author`, `core:hw` | The Details panel and full-text search |
+| `captures[0].core:frequency` | Centre frequency of the axis |
+| `captures[0].core:datetime` | Capture date (shown, and filterable through the API) |
+| `annotations[].core:sample_start`, `core:sample_count` | Annotation time extent (no `sample_start`: skipped; no `sample_count`: 1 sample) |
+| `annotations[].core:freq_lower_edge`, `core:freq_upper_edge` | Annotation frequency extent in Hz (absent: the whole band) |
+| `annotations[].core:label`, `core:comment` | Box label, colour, filter chip and search; comment in the side panel |
+
+The whole metadata document is kept in the index and returned by
+`GET /api/recordings/{id}`, so every other field, extensions included, is available to API
+clients even though the UI doesn't interpret it yet.
+
+**Not supported yet:**
+
+| SigMF feature | What happens today |
+|---|---|
+| Several `captures` segments | Only the first segment's frequency and date are used; a retune mid-file isn't shown on the axis |
+| `core:header_bytes` | Not skipped: the header bytes are decoded as samples |
+| `core:num_channels` > 1 | Channels aren't de-interleaved |
+| `.sigmf` archives (tar) | Not opened |
+| `.sigmf-collection` | Ignored |
+| Non-conforming datasets (`core:dataset`) and metadata-only recordings | Listed as **Broken** (`missing .sigmf-data`) |
+| Extension namespaces (`antenna:`, `capture_details:`, …) | Stored and returned by the API; not shown in the UI |
+
+Raw IQ files without metadata are listed too; see [Recording status](#recording-status).
+Field-by-field details: [Recordings and formats](docs/wiki/Recordings-and-Formats.md) in the
+wiki.
 
 ## Quick start
 

@@ -45,6 +45,18 @@ Reasons a recording is **Broken**:
 The whole metadata document is stored in the index and returned by the API, so other fields
 are kept, just not interpreted yet.
 
+### Not supported yet
+
+| SigMF feature | What happens today |
+|---|---|
+| Several `captures` segments | Only the first segment's frequency and date are used; a retune mid-file isn't shown on the axis |
+| `core:header_bytes` | Not skipped: the header bytes are decoded as samples |
+| `core:num_channels` > 1 | Channels aren't de-interleaved |
+| `.sigmf` archives (tar) | Not opened |
+| `.sigmf-collection` | Ignored |
+| Non-conforming datasets (`core:dataset`) and metadata-only recordings | Listed as **Broken** (`missing .sigmf-data`) |
+| Extension namespaces (`antenna:`, `capture_details:`, …) | Stored and returned by the API; not shown in the UI |
+
 ### Annotations
 
 | Field | |
