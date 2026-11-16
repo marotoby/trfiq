@@ -48,6 +48,7 @@ Run `cz bump --dry-run` (with the same flags) first to preview the version and c
 
 | Version | Date | |
 |---|---|---|
+| `0.3.1` | 2026-11-15 | Annotation chips in the gallery and table show whole, as many as fit |
 | `0.3.0` | 2026-11-15 | Full-resolution tiles when zoomed in; `viewable` decided by the index; wire and view-model refactors; zoomed share links work again |
 | `0.2.1` | 2026-11-15 | Overview rows centred in their time slots, spectrogram columns at bin centres, cycles/sample and samples without a sample rate |
 | `0.2.0` | 2026-11-15 | First stable release: adds the folders view |

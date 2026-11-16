@@ -1,3 +1,9 @@
+## v0.3.1 (2026-11-15)
+
+### Fix
+
+- **web**: show annotation chips whole, as many as fit
+
 ## v0.3.0 (2026-11-15)
 
 ### Feat
