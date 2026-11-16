@@ -72,14 +72,7 @@ const columns = col.columns([
     cell: (c) => {
       const labels = c.row.original.labels
       if (!labels.length) return <span className="muted">—</span>
-      return (
-        <span className="tags">
-          {labels.slice(0, 3).map((l) => (
-            <span key={l} className="tag" style={{ '--c': labelColor(l) } as CSSProperties}>{l}</span>
-          ))}
-          {labels.length > 3 && <span className="muted">+{labels.length - 3}</span>}
-        </span>
-      )
+      return <Tags labels={labels} />
     },
   }),
 ])
@@ -366,6 +359,56 @@ function Gallery({ data }: { data: Recording[] }) {
   )
 }
 
+const TAGS_MAX = 24
+const TAGS_GAP = 5
+/** Room kept for the "+N" after the last chip that fits. */
+const TAGS_MORE_PX = 34
+
+/**
+ * Annotation labels as one row of chips: as many whole chips as fit the width, then "+N" for
+ * the rest (the full list is in the title). Chips past the cut stay laid out, clipped and
+ * hidden, so their widths can be measured whenever the row is resized.
+ */
+function Tags({ labels }: { labels: string[] }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [shown, setShown] = useState(labels.length)
+  const list = labels.slice(0, TAGS_MAX)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      const widths = [...el.querySelectorAll<HTMLElement>(':scope > .tag')].map((t) => t.offsetWidth)
+      const room = el.clientWidth
+      let used = 0
+      let k = 0
+      for (; k < widths.length; k++) {
+        const next = used + (k ? TAGS_GAP : 0) + widths[k]
+        const reserve = k + 1 < labels.length ? TAGS_GAP + TAGS_MORE_PX : 0
+        if (next + reserve > room) break
+        used = next
+      }
+      // Always show one chip (ellipsised if it is wider than the row).
+      setShown(Math.max(1, k))
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [labels])
+  if (!labels.length) return null
+  const hidden = labels.length - shown
+  return (
+    <span ref={ref} className="tags" title={labels.join(', ')}>
+      {list.map((l, i) => (
+        <span key={l} className={i < shown ? 'tag' : 'tag tag-hidden'} style={{ '--c': labelColor(l) } as CSSProperties}>
+          {l}
+        </span>
+      ))}
+      {hidden > 0 && <span className="tags-more muted">+{hidden}</span>}
+    </span>
+  )
+}
+
 function GalleryCard({ r }: { r: Recording }) {
   const { folder, name } = splitStem(r.stem)
   const meta = [fmt.hz(r.center_freq), fmt.sps(r.sample_rate), fmt.seconds(fmt.duration(r)), fmt.bytes(r.size)]
@@ -407,12 +450,7 @@ function GalleryCard({ r }: { r: Recording }) {
             </span>
           )}
         </div>
-        <span className="tags">
-          {r.labels.slice(0, 4).map((l) => (
-            <span key={l} className="tag" style={{ '--c': labelColor(l) } as CSSProperties}>{l}</span>
-          ))}
-          {r.labels.length > 4 && <span className="muted">+{r.labels.length - 4}</span>}
-        </span>
+        <Tags labels={r.labels} />
       </div>
     </Link>
   )

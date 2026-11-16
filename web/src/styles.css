@@ -199,12 +199,18 @@ select:hover, .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.25
 .status-needs_meta .dot { background: var(--warn); }
 .status-broken { color: var(--bad); }
 .status-broken .dot { background: var(--bad); }
-.tags { display: inline-flex; gap: 5px; align-items: center; }
+.tags { display: flex; gap: 5px; align-items: center; min-width: 0; max-width: 100%; overflow: hidden; }
+/* One line each: a chip never shrinks or wraps (Tags hides the ones that do not fit), except
+   that a lone chip wider than the row is ellipsised. */
 .tag {
-  display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 11px;
+  flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  height: 20px; line-height: 18px; padding: 0 7px; border-radius: 5px; font-size: 11px;
   color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--c) 30%, transparent);
 }
+/* Hidden chips go after "+N", where the row clips them. */
+.tag-hidden { visibility: hidden; order: 2; }
+.tags-more { flex: none; order: 1; font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* ---- viewer ---------------------------------------------------------------------------- */
 
@@ -388,7 +394,6 @@ select:hover, .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.25
 .gcard-body { display: flex; flex-direction: column; gap: 6px; min-height: 0; padding: 10px 12px 12px; }
 .gcard-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .gcard-meta { font-size: 12px; color: var(--fg-muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gcard .tags { overflow: hidden; flex-wrap: nowrap; }
 .gcard.row-broken .gcard-name .name-main { color: var(--fg-muted); }
 
 /* ---- folders view ------------------------------------------------------------------------ */
