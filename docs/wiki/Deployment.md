@@ -6,7 +6,7 @@ non-root base image (about 44 MB).
 ## Build the image
 
 ```sh
-docker build -f deploy/Dockerfile -t trfiq:0.3.1 .
+docker build -f deploy/Dockerfile -t trfiq:0.4.0 .
 ```
 
 The build has three stages: bun builds the UI, Rust compiles the server with the UI embedded,
@@ -16,7 +16,7 @@ To serve it under a sub-path behind a reverse proxy (for example `https://lab.ex
 build the UI for that path:
 
 ```sh
-docker build -f deploy/Dockerfile --build-arg TRFIQ_BASE_PATH=/trfiq/ -t trfiq:0.3.1 .
+docker build -f deploy/Dockerfile --build-arg TRFIQ_BASE_PATH=/trfiq/ -t trfiq:0.4.0 .
 ```
 
 The proxy must strip the prefix before forwarding, since the server itself always serves from
@@ -30,7 +30,7 @@ docker run -d --name trfiq --restart unless-stopped -p 8080:8080 \
   -v "$PWD/config.yaml:/etc/trfiq/config.yaml:ro" \
   -v trfiq-data:/var/lib/trfiq \
   -v /data/iq:/mnt/recordings:ro \
-  trfiq:0.3.1
+  trfiq:0.4.0
 ```
 
 | Mount | |

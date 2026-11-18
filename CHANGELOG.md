@@ -1,3 +1,9 @@
+## v0.4.0 (2026-11-17)
+
+### Feat
+
+- **web**: collapsible side cards, eye toggles all labels, copyable source details
+
 ## v0.3.1 (2026-11-15)
 
 ### Fix

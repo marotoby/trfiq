@@ -2245,7 +2245,7 @@ dependencies = [
 
 [[package]]
 name = "trfiq-dsp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "num-complex",
  "rayon",
@@ -2257,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "trfiq-index"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "trfiq-server"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2301,7 +2301,7 @@ dependencies = [
 
 [[package]]
 name = "trfiq-storage"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bytes",
