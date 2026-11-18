@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { WINDOWS, api, type Overview, type RecordingDetail, type Tile, type WindowFn } from '../api'
+import { WINDOWS, api, type Overview, type RecordingDetail, type SourceInfo, type Tile, type WindowFn } from '../api'
 import { parseAnnotations, toPlot, type Annotation } from '../annotations'
 import * as fmt from '../format'
 import { geometry, type Geometry } from '../geometry'
@@ -18,7 +18,7 @@ import {
   type Mode,
   type View,
 } from '../spectrogram/viewModel'
-import { Divider, Field, Icon, IconButton, Segmented } from '../ui'
+import { CopyButton, Divider, Field, Icon, IconButton, Segmented } from '../ui'
 import { tileFor, tileRows, type TileWindow } from '../spectrogram/tiles'
 
 const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384]
@@ -91,7 +91,6 @@ export function Viewer() {
     model.set(decodeView(search.v) ?? FULL_VIEW)
   }, [search.v, model])
   const [mode, setModeState] = useState<Mode>(loadMode)
-  const [showAnn, setShowAnn] = useState(true)
   const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<number | null>(null)
   const [panels, setPanels] = useState<Panels>(loadPanels)
@@ -120,6 +119,7 @@ export function Viewer() {
     queryFn: ({ signal }) => api.recording(id, signal),
   })
   const viewable = !!rec.data?.viewable
+  const sources = useQuery({ queryKey: ['sources'], queryFn: ({ signal }) => api.sources(signal) })
 
   const overview = useQuery({
     queryKey: ['overview', id, fft, windowFn, ROWS],
@@ -162,14 +162,17 @@ export function Viewer() {
   const shownFft = overview.data?.fft ?? fft
   const geo = useMemo(() => (rec.data ? geometry(rec.data, shownFft) : null), [rec.data, shownFft])
   const annotations = useMemo(() => parseAnnotations(rec.data?.meta), [rec.data])
-  const plotAnnotations = useMemo(() => {
-    if (!geo) return []
-    return annotations.filter((a) => !hiddenLabels.has(a.label)).map((a) => toPlot(a, geo))
-  }, [annotations, hiddenLabels, geo])
-
-  const listedAnnotations = useMemo(
-    () => (showAnn ? annotations.filter((a) => !hiddenLabels.has(a.label)) : NO_ANNOTATIONS),
-    [annotations, hiddenLabels, showAnn],
+  const labelNames = useMemo(() => [...new Set(annotations.map((a) => a.label))], [annotations])
+  // The eye (and A) shows or hides every label at once; it reads "on" while any label is visible.
+  const showAnn = labelNames.some((l) => !hiddenLabels.has(l))
+  const toggleAllLabels = () => setHiddenLabels(showAnn ? new Set(labelNames) : new Set())
+  const visibleAnnotations = useMemo(
+    () => annotations.filter((a) => !hiddenLabels.has(a.label)),
+    [annotations, hiddenLabels],
+  )
+  const plotAnnotations = useMemo(
+    () => (geo ? visibleAnnotations.map((a) => toPlot(a, geo)) : []),
+    [visibleAnnotations, geo],
   )
 
   const selectAnnotation = (a: Annotation | null, zoom: boolean) => {
@@ -296,7 +299,7 @@ export function Viewer() {
               showAnnotations={showAnn}
               selected={selected}
               onMode={setMode}
-              onToggleAnnotations={() => setShowAnn((s) => !s)}
+              onToggleAnnotations={toggleAllLabels}
               onTogglePanel={togglePanel}
               onAnnotationClick={(aid) => selectAnnotation(annotations.find((a) => a.id === aid) ?? null, false)}
             />
@@ -310,7 +313,7 @@ export function Viewer() {
             fft={fft}
             windowFn={windowFn}
             panels={panels}
-            annotations={listedAnnotations}
+            annotations={visibleAnnotations}
             selected={selected}
             onSelect={(a) => selectAnnotation(a, false)}
           />
@@ -318,12 +321,12 @@ export function Viewer() {
         </div>
 
         <aside className="side">
-          <Details r={r} />
+          <Details r={r} source={sources.data?.find((s) => s.id === r.source)} />
           <AnnotationPanel
             geo={geo}
             annotations={annotations}
             show={showAnn}
-            onToggleShow={() => setShowAnn((s) => !s)}
+            onToggleShow={toggleAllLabels}
             hiddenLabels={hiddenLabels}
             onToggleLabel={(l) =>
               setHiddenLabels((s) => {
@@ -343,8 +346,6 @@ export function Viewer() {
 }
 
 // ---- detail plots for the visible window ---------------------------------------------------
-
-const NO_ANNOTATIONS: Annotation[] = []
 
 function DetailRow(p: {
   r: RecordingDetail
@@ -408,8 +409,28 @@ function Levels(props: {
 
 // ---- side panel ----------------------------------------------------------------------------
 
-function Details({ r }: { r: RecordingDetail }) {
-  const items: [string, string][] = [
+/** Side-panel card whose title toggles the body open and closed. */
+function SideCard(props: { title: ReactNode; actions?: ReactNode; className?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(true)
+  return (
+    <section className={`card${props.className ? ` ${props.className}` : ''}${open ? '' : ' collapsed'}`}>
+      <header className="card-head">
+        <h3>
+          <button type="button" className="card-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            <Icon name="chevron" size={14} />
+            {props.title}
+          </button>
+        </h3>
+        {props.actions}
+      </header>
+      {open && props.children}
+    </section>
+  )
+}
+
+function Details({ r, source }: { r: RecordingDetail; source: SourceInfo | undefined }) {
+  // [label, value, copyable]
+  const items: [string, string, boolean?][] = [
     ['Samples', r.num_samples?.toLocaleString() ?? '—'],
     ['Duration', fmt.seconds(fmt.duration(r))],
     ['Sample rate', fmt.sps(r.sample_rate)],
@@ -420,19 +441,25 @@ function Details({ r }: { r: RecordingDetail }) {
   if (r.datetime) items.push(['Captured', r.datetime.replace('T', ' ').replace('Z', ' UTC')])
   if (r.hw) items.push(['Hardware', r.hw])
   if (r.author) items.push(['Author', r.author])
+  items.push(['Source', source?.name ?? r.source, true])
+  if (source) items.push([source.kind === 's3' ? 'Bucket' : 'Folder', source.location, true])
+  if (r.data_key) items.push(['Data key', r.data_key, true])
+  if (r.meta_key) items.push(['Meta key', r.meta_key, true])
   return (
-    <section className="card">
-      <h3>Details</h3>
+    <SideCard title="Details">
       {r.description && <p className="desc">{r.description}</p>}
       <dl className="kv">
-        {items.map(([k, v]) => (
+        {items.map(([k, v, copy]) => (
           <div key={k}>
             <dt>{k}</dt>
-            <dd>{v}</dd>
+            <dd className={copy ? 'copyable' : undefined}>
+              {v}
+              {copy && <CopyButton text={v} label={k.toLowerCase()} />}
+            </dd>
           </div>
         ))}
       </dl>
-    </section>
+    </SideCard>
   )
 }
 
@@ -465,18 +492,19 @@ function AnnotationPanel(props: {
   const LIMIT = 500
 
   return (
-    <section className="card ann-card">
-      <header className="card-head">
-        <h3>
-          Annotations <span className="count">{annotations.length}</span>
-        </h3>
+    <SideCard
+      className="ann-card"
+      title={<>Annotations <span className="count">{annotations.length}</span></>}
+      actions={
         <IconButton
           icon={props.show ? 'eye' : 'eyeOff'}
-          label={props.show ? 'Hide annotations on the plot (A)' : 'Show annotations on the plot (A)'}
+          label={props.show ? 'Hide all labels (A)' : 'Show all labels (A)'}
           active={props.show}
+          disabled={annotations.length === 0}
           onClick={props.onToggleShow}
         />
-      </header>
+      }
+    >
       {annotations.length === 0 ? (
         <p className="muted small">This recording has no annotations.</p>
       ) : (
@@ -519,7 +547,7 @@ function AnnotationPanel(props: {
           </ul>
         </>
       )}
-    </section>
+    </SideCard>
   )
 }
 

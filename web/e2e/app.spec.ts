@@ -199,6 +199,20 @@ test('annotations are listed, filterable, and zoom the plot when clicked', async
   await page.locator('.label-chip', { hasText: 'CW' }).click()
   await expect(items).toHaveCount(19)
 
+  // The eye hides every label (chips go off), then shows them all again.
+  await page.getByRole('button', { name: 'Hide all labels (A)' }).click()
+  await expect(items).toHaveCount(0)
+  await expect(page.locator('.label-chip.off')).toHaveCount(5)
+  await page.getByRole('button', { name: 'Show all labels (A)' }).click()
+  await expect(items).toHaveCount(19)
+
+  // The card title collapses and expands the list.
+  const toggle = page.locator('.ann-card .card-toggle')
+  await toggle.click()
+  await expect(items).toHaveCount(0)
+  await toggle.click()
+  await expect(items).toHaveCount(19)
+
   // Clicking an annotation selects it and zooms to it.
   const lora = items.filter({ hasText: 'LoRa' }).first()
   await lora.click()

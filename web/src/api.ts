@@ -47,6 +47,8 @@ export interface SourceInfo {
   id: string
   name: string
   kind: 's3' | 'local'
+  /** S3 bucket name, or the local folder path. */
+  location: string
   scan: {
     scanning: boolean
     last_scan_unix: number | null

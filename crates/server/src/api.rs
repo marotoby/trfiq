@@ -94,6 +94,7 @@ async fn sources(State(st): St) -> ApiResult<impl IntoResponse> {
                 "id": s.id,
                 "name": s.name,
                 "kind": s.kind,
+                "location": s.location,
                 "scan": st.status(&s.id),
                 "counts": counts.get(&s.id).cloned().unwrap_or_default(),
             })

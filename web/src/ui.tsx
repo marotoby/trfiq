@@ -1,6 +1,6 @@
 // Small shared UI pieces: icons (inline SVG, no icon font or CDN), buttons, segmented control.
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 const ICONS = {
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
@@ -19,6 +19,8 @@ const ICONS = {
   spectrum: <><path d="M3 20h18" /><path d="M3 17l3-1 2-8 2 8 2-3 2 2 2-11 2 12 2 1h2" /></>,
   wave: <><path d="M2 12c1.7-5 3.3-5 5 0s3.3 5 5 0 3.3-5 5 0 3.3 5 5 0" /></>,
   chevron: <><path d="m9 6 6 6-6 6" /></>,
+  copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></>,
+  check: <><path d="M20 6 9 17l-5-5" /></>,
   list: <><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></>,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
   keyboard: <><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></>,
@@ -132,4 +134,24 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export function Divider() {
   return <span className="divider" aria-hidden="true" />
+}
+
+/** Copies `text` to the clipboard; the icon turns into a check for a moment. */
+export function CopyButton({ text, label }: { text: string; label: string }) {
+  const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle')
+  const copy = () => {
+    // navigator.clipboard is undefined outside secure contexts; the .then wrapper turns that into a rejection.
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(text))
+      .then(() => setState('done'), () => setState('failed'))
+      .finally(() => setTimeout(() => setState('idle'), 1200))
+  }
+  return (
+    <IconButton
+      icon={state === 'done' ? 'check' : 'copy'}
+      label={state === 'failed' ? 'Copy failed (clipboard needs HTTPS or localhost)' : `Copy ${label}`}
+      className="copy-btn"
+      onClick={copy}
+    />
+  )
 }

@@ -306,6 +306,16 @@ select:hover, .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.25
 .side .card { padding: 14px; }
 .side h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; }
 .card-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -4px 8px 0; }
+.card-head h3 { margin: 0; }
+.card-toggle {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; border: 0; background: none; cursor: pointer;
+  color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit;
+}
+.card-toggle:hover { color: var(--fg); }
+.card-toggle .icon { transform: rotate(90deg); transition: transform 0.12s; }
+.collapsed .card-toggle .icon { transform: none; }
+.side .card.collapsed .card-head { margin-bottom: -4px; }
+.ann-card.collapsed { flex: none; min-height: 0; }
 .count {
   display: inline-grid; place-items: center; min-width: 20px; height: 18px; margin-left: 6px; padding: 0 5px;
   border-radius: 999px; background: var(--surface-3); color: var(--fg); font-size: 11px; letter-spacing: 0;
@@ -315,6 +325,8 @@ select:hover, .btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.25
 .kv div { display: contents; }
 .kv dt { color: var(--fg-muted); }
 .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kv dd.copyable { display: flex; align-items: center; justify-content: flex-end; gap: 2px; font-family: var(--font-mono); font-size: 12px; }
+.kv .copy-btn { min-width: 22px; height: 22px; padding: 0 3px; }
 
 .ann-card { flex: 1; min-height: 240px; display: flex; flex-direction: column; }
 .label-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }

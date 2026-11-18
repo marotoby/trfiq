@@ -64,6 +64,8 @@ pub struct Source {
     pub id: String,
     pub name: String,
     pub kind: &'static str,
+    /// S3 bucket name, or the local folder path.
+    pub location: String,
     store: Arc<dyn ObjectStore>,
     prefix: Option<Path>,
     permits: Semaphore,
@@ -71,7 +73,7 @@ pub struct Source {
 
 impl Source {
     pub fn new(cfg: &SourceConfig) -> Result<Self> {
-        let (kind, store): (_, Arc<dyn ObjectStore>) = match &cfg.kind {
+        let (kind, location, store): (_, _, Arc<dyn ObjectStore>) = match &cfg.kind {
             SourceKind::S3 {
                 bucket,
                 endpoint,
@@ -96,11 +98,13 @@ impl Source {
                 }
                 (
                     "s3",
+                    bucket.clone(),
                     Arc::new(b.build().with_context(|| format!("source {}", cfg.id))?),
                 )
             }
             SourceKind::Local { path } => (
                 "local",
+                path.display().to_string(),
                 Arc::new(
                     LocalFileSystem::new_with_prefix(path)
                         .with_context(|| format!("source {}: {}", cfg.id, path.display()))?,
@@ -112,6 +116,7 @@ impl Source {
             id: cfg.id.clone(),
             name: cfg.name.clone().unwrap_or_else(|| cfg.id.clone()),
             kind,
+            location,
             store,
             prefix: (!prefix.is_empty()).then(|| Path::from(prefix)),
             permits: Semaphore::new(cfg.max_concurrency.max(1)),
